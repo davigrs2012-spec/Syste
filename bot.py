@@ -13,14 +13,21 @@ except:
 TOKEN = os.getenv("TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# ========== GIFS DIRETO.GIF - FUNCIONA NO DISCORD ==========
-# TROQUE ESSES PELOS SEUS: baixa do Klipy e upa no Discord, pega o link cdn.discordapp.com/...gif
-GIF_CJ_TRISTE = "https://media.tenor.com/2uyENRuvVAgAAAAi/cj.gif"
-GIF_GROVE_DANCANDO = "https://media.tenor.com/4X3vR7Q8QAAAAAAi/cj-dance.gif"
-GIF_BIGSMOKE_PEDIDO = "https://media.tenor.com/1b3a5c9dEfAAAAAC/big-smoke-order.gif"
-GIF_SEITA_DANCANDO = "https://media.tenor.com/8o2p5Z1Y1AAAAAd/cj-grove-dance.gif"
-GIF_PESCA_PESCI = "https://media.tenor.com/9p3qR4sT2AAAAAd/beach-boy-pesci.gif"
-GIF_CJ_IA = "https://media.tenor.com/1q2w3E4r5TAAAAAd/cj-san-andreas.gif"
+# ========== GIFS DIRETO.GIF - PADRÃO TEXTO + LINK ==========
+# COLA SEUS LINKS DIRETO AQUI - TEM QUE TERMINAR EM.GIF
+# Pega do Klipy: botão direito > copiar endereço da imagem
+# Ou upa no Discord e pega o cdn.discordapp.com/...gif
+GIF_CJ_TRISTE = "https://klipy.com/gifs/gta-sa-grand-theft-auto-san-andreas-2"
+GIF_GROVE_DANCANDO = "https://klipy.com/gifs/cj-dance-gtasan"
+GIF_BIGSMOKE_PEDIDO = "https://klipy.com/gifs/gta-gta-sa-486"
+GIF_SEITA_DANCANDO = "https://klipy.com/gifs/cj-dance-gta"
+GIF_CJ_IA = "https://klipy.com/gifs/san-andreas-gta-2"
+# SE NÃO APARECER, USA ESSES DE TESTE QUE SÃO.GIF DIRETO:
+# GIF_CJ_TRISTE = "https://media.tenor.com/2uyENRuvVAgAAAAi/cj.gif"
+# GIF_GROVE_DANCANDO = "https://media.tenor.com/Bi8H1X2s3kAAAAAi/cj-dance.gif"
+# GIF_BIGSMOKE_PEDIDO = "https://media.tenor.com/1b3a5c9dEfAAAAAC/big-smoke.gif"
+# GIF_SEITA_DANCANDO = "https://media.tenor.com/8o2p5Z1Y1AAAAAd/grove-dance.gif"
+# GIF_CJ_IA = "https://media.tenor.com/1q2w3E4r5TAAAAAd/cj-ai.gif"
 
 # CANAIS
 CANAL_BOAS_VINDAS = 1558857282702409749
@@ -47,6 +54,7 @@ intents.guilds = True
 intents.messages = True
 bot = commands.Bot(command_prefix=["!", "cj!", "grove!"], intents=intents, help_command=None)
 
+# DB
 inventario = defaultdict(list)
 carteira = defaultdict(int)
 level = defaultdict(lambda: {"xp": 0, "level": 1})
@@ -56,7 +64,6 @@ rep = defaultdict(int)
 afk = {}
 casamento = {}
 pesca_cd = {}
-cmd_cd = defaultdict(dict)
 blacklist = set()
 sugestoes = []
 
@@ -105,7 +112,7 @@ async def dar_cargo_level(member, lvl):
 
 @bot.event
 async def on_ready():
-    print(f"GROVE STREET CJ BOT 850 LINHAS ISCA + GIFS ON: {bot.user}")
+    print(f"GROVE STREET CJ BOT 850 LINHAS ISCA + GIFS TEXTO+C LINK ON: {bot.user}")
     await bot.change_presence(activity=discord.Game(name="Grove Street 4 Life | /ajuda"))
     try: s = await bot.tree.sync(); print(f"Sync {len(s)} comandos CJ")
     except Exception as e: print(e)
@@ -268,41 +275,62 @@ async def blacklist_cmd(interaction: discord.Interaction, membro: discord.Member
     if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
     blacklist.add(membro.id); await interaction.response.send_message(f"🚫 {membro.mention} na blacklist Grove!")
 
-# ========== MEMBROS - COM GIFS SÓ ONDE TU PEDIU ==========
-@bot.tree.command(name="cj", description="💚 CJ triste - COM GIF")
+# ========== MEMBROS - GROVE COM TEXTO + GIF LINK ==========
+@bot.tree.command(name="cj", description="💚 CJ triste")
 async def cj_cmd(interaction: discord.Interaction):
     frase = random.choice(FRASES_CJ)
-    emb = discord.Embed(title="💚 CJ - GROVE STREET", description=f"**{frase}**\nAh shit, here we go again... 😢", color=0x00ff00)
-    emb.set_image(url=GIF_CJ_TRISTE)
-    emb.set_footer(text="CJ triste | Cristino 👑 | Gif funcionando")
-    await interaction.response.send_message(embed=emb)
+    texto = f"💚 **CJ - GROVE STREET**\n**{frase}**\nAh shit, here we go again... 😢\nBig Smoke sempre com fome | Grove Street"
+    await interaction.response.send_message(f"{texto}\n{GIF_CJ_TRISTE}")
 
-@bot.tree.command(name="grove", description="💃 Grove dançando - COM GIF")
+@bot.tree.command(name="grove", description="💃 Grove dançando")
 async def grove_cmd(interaction: discord.Interaction):
-    emb = discord.Embed(title="💚 GROVE STREET DANÇANDO!", description="**GROVE STREET 4 LIFE!** 💃💚 Grove não para, seita dançando!", color=0x00ff00)
-    emb.set_image(url=GIF_GROVE_DANCANDO)
-    emb.set_footer(text="Grove dançando | Cristino OG")
-    await interaction.response.send_message(embed=emb)
+    texto = f"💚 **GROVE STREET DANÇANDO!**\n**GROVE STREET 4 LIFE!** 💃💚 Grove não para, seita dançando!\nGrove Street Families dançando | Cristino OG"
+    await interaction.response.send_message(f"{texto}\n{GIF_GROVE_DANCANDO}")
 
-@bot.tree.command(name="bigsmoke", description="🍔 Big Smoke pedido clássico - COM GIF")
+@bot.tree.command(name="bigsmoke", description="🍔 Big Smoke pedido clássico")
 async def bigsmoke_cmd(interaction: discord.Interaction):
-    emb = discord.Embed(title="🍔 BIG SMOKE - PEDIDO CLÁSSICO", description="**BIG SMOKE:**\nTwo number 9s, a number 9 large, a number 6 with extra dip, a number 7, two number 45s, one with cheese, and a large soda! 🍔🥤\n\nCluckin Bell!", color=0xe67e22)
-    emb.set_image(url=GIF_BIGSMOKE_PEDIDO)
-    emb.set_footer(text="Big Smoke pedido clássico | Agora aparece o gif!")
-    await interaction.response.send_message(embed=emb)
+    texto = f"🍔 **BIG SMOKE - PEDIDO CLÁSSICO**\n**BIG SMOKE:**\nTwo number 9s, a number 9 large, a number 6 with extra dip, a number 7, two number 45s, one with cheese, and a large soda! 🍔🥤\n\nCluckin Bell!\nBig Smoke sempre com fome | Grove Street"
+    await interaction.response.send_message(f"{texto}\n{GIF_BIGSMOKE_PEDIDO}")
 
-@bot.tree.command(name="seita", description="🕺 Juramento Seita - COM GIF")
+@bot.tree.command(name="seita", description="🕺 Juramento Seita")
 async def seita_cmd(interaction: discord.Interaction):
-    emb = discord.Embed(title="💚 GROVE STREET FAMILIES - SEITA", description="**JURAMENTO DA SEITA:**\n🔫 Grove Street é vida\n💚 Verde pra sempre\n👑 Cristino é o OG\n🕺 CJ dançando na Grove\n🔥 Ballas nunca!\n\nVocê jurou! +100 XP!", color=0x00ff00)
-    emb.set_image(url=GIF_SEITA_DANCANDO)
-    emb.set_footer(text="Seita do CJ domina | Cristino criou | +100 XP")
+    texto = f"💚 **GROVE STREET FAMILIES - SEITA**\n🔫 Grove Street é vida\n💚 Verde pra sempre\n👑 Cristino é o OG\n🕺 CJ dançando na Grove\n🔥 Ballas nunca!\n\nVocê jurou! +100 XP!\nSeita do CJ domina | Cristino criou"
     add_xp(interaction.user.id, 100)
-    await interaction.response.send_message(embed=emb)
+    await interaction.response.send_message(f"{texto}\n{GIF_SEITA_DANCANDO}")
+
+@bot.tree.command(name="ia", description="🤖 CJ IA Grove Real")
+async def ia_cmd(interaction: discord.Interaction, pergunta: str):
+    if interaction.channel.id!= CANAL_BOT and not is_adm(interaction):
+        await interaction.response.send_message(f"❌ Usa no <#{CANAL_BOT}>!", ephemeral=True); return
+    await interaction.response.defer()
+    if not GROQ_API_KEY: await interaction.followup.send("❌ GROQ_API_KEY não tá no Railway!", ephemeral=True); return
+    try:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": "Você é CJ da Grove Street, GTA San Andreas. Bot da Seita do CJ criado por Cristino. Fala com gírias de cria, Grove Street, Ballas, Big Smoke, Sweet. NUNCA fale Loritta. Você é CJ, fala 'Ah shit here we go again', 'Grove Street 4 life'. Responde curto 1-3 frases, engraçado, com emoji 💚🔫👑. Nunca diga que é IA, você é CJ."},
+                {"role": "user", "content": pergunta}
+            ],
+            "temperature": 0.9,
+            "max_tokens": 300
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status!=200:
+                    txt = await resp.text()
+                    raise Exception(f"Groq {resp.status}: {txt[:300]}")
+                data = await resp.json()
+                resposta_ia = data["choices"][0]["message"]["content"]
+        texto = f"🤖 **CJ DA GROVE - IA REAL 💚**\n💬 **{interaction.user.display_name}:** {pergunta}\n💚 **CJ responde:** {resposta_ia}\n\nGrove Street Families | Cristino OG 👑"
+        await interaction.followup.send(f"{texto}\n{GIF_CJ_IA}")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro Grove IA: {e}", ephemeral=True)
 
 @bot.tree.command(name="sweet", description="💪 Sweet da Grove")
 async def sweet_cmd(interaction: discord.Interaction):
-    emb = discord.Embed(title="💪 SWEET - GROVE OG", description="**SWEET:** Você tá representando a Grove ou tá com os Ballas, CJ?\nSeita não cai!", color=0x00ff00)
-    await interaction.response.send_message(embed=emb)
+    await interaction.response.send_message("💪 **SWEET - GROVE OG**\n**SWEET:** Você tá representando a Grove ou tá com os Ballas, CJ?\nSeita não cai!")
 
 @bot.tree.command(name="ryder", description="💧 Ryder da Grove")
 async def ryder_cmd(interaction: discord.Interaction):
@@ -311,7 +339,6 @@ async def ryder_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="bemvindo", description="👋 Guia pra quem entrou na Grove")
 async def bemvindo_cmd(interaction: discord.Interaction):
     emb = discord.Embed(title="💚 BEM VINDO A GROVE STREET - GUIA!", description=f"**EAI MANO, BEM VINDO!**\n\n📜 **PASSO A PASSO:**\n1️⃣ Lê <#{CANAL_REGRAS}>\n2️⃣ Usa /seita pra jurar (+100 XP)\n3️⃣ Vai no <#{CANAL_PESCA}> e /pescar\n4️⃣ Junta grana e compra na /loja\n5️⃣ Usa /ia no <#{CANAL_BOT}> pra falar com CJ\n6️⃣ Sobe level e pega cargos!\n\n**💚 SEITA DO CJ:**\nCristino é o OG 👑\nCJ é o mano 💚\nGrove Street 4 Life! 🔫", color=0x00ff00)
-    emb.set_footer(text="Guia sem gif pra não poluir - Grove Street")
     await interaction.response.send_message(embed=emb)
 
 @bot.tree.command(name="regras", description="📜 Regras da Grove")
@@ -339,7 +366,7 @@ async def serverinfo_cmd(interaction: discord.Interaction):
 async def perfil_cmd(interaction: discord.Interaction, membro: discord.Member=None):
     membro=membro or interaction.user; data=level[membro.id]
     emb=discord.Embed(title=f"💚 Perfil Grove - {membro.display_name}", color=0x00ff00); emb.set_thumbnail(url=membro.display_avatar.url)
-    emb.add_field(name="🏆 Level Grove", value=f"{data['level']} ({data['xp']} XP)", inline=True); emb.add_field(name="💰 Grana", value=f"R$ {carteira[membro.id]}", inline=True); emb.add_field(name="🐟 Peixes", value=f"{len(inventario[membro.id])}", inline=True); emb.add_field(name="⭐ Rep", value=f"{rep[membro.id]}", inline=True); emb.add_field(name="💍 Casado", value=f"<@{casamento[membro.id]}>" if membro.id in casamento else "Solteiro", inline=True)
+    emb.add_field(name="🏆 Level Grove", value=f"{data['level']} ({data['xp']} XP)", inline=True); emb.add_field(name="💰 Grana", value=f"R$ {carteira[membro.id]}", inline=True); emb.add_field(name="🐟 Peixes", value=f"{len(inventario[membro.id])}", inline=True); emb.add_field(name="⭐ Rep", value=f"{rep[membro.id]}", inline=True)
     await interaction.response.send_message(embed=emb)
 
 @bot.tree.command(name="carteira", description="💰 Grana da Grove")
@@ -352,7 +379,7 @@ async def daily_cmd(interaction: discord.Interaction):
     if ultimo and (agora-ultimo).total_seconds()<86400: await interaction.response.send_message(f"💚 Já pegou daily! Volta em {int(86400-(agora-ultimo).total_seconds())//3600}h", ephemeral=True); return
     daily[interaction.user.id]=agora; premio=random.randint(200,500); carteira[interaction.user.id]+=premio; await interaction.response.send_message(f"🎁💚 +R$ {premio} daily! CJ mandou!")
 
-@bot.tree.command(name="pescar", description="🎣 Pescar Beach Boy JoJo + CJ - COM GIF")
+@bot.tree.command(name="pescar", description="🎣 Pescar na Grove - SEM GIF")
 async def pescar_cmd(interaction: discord.Interaction):
     if interaction.channel.id!= CANAL_PESCA and not is_adm(interaction): await interaction.response.send_message(f"❌ Só no <#{CANAL_PESCA}>!", ephemeral=True); return
     agora = datetime.now(timezone.utc); ultimo = pesca_cd.get(interaction.user.id)
@@ -361,8 +388,7 @@ async def pescar_cmd(interaction: discord.Interaction):
     peixe = random.choices(peixes_cj, weights=[30,25,15,10,5,1,2], k=1)[0]
     inventario[interaction.user.id].append(peixe); carteira[interaction.user.id]+=peixe["preco"]
     upou, old, new = add_xp(interaction.user.id, peixe["xp"])
-    emb = discord.Embed(title="🎣 PESCOU NA GROVE! - BEACH BOY JOJO" if "Beach Boy" in peixe["nome"] else "🎣 PESCOU NA GROVE!", description=f"{peixe['emoji']} **{peixe['nome']}** - {peixe['rar']}\n💚 R$ {peixe['preco']} +{peixe['xp']} XP", color=peixe["cor"])
-    emb.set_image(url=GIF_PESCA_PESCI)
+    emb = discord.Embed(title="🎣 PESCOU NA GROVE!", description=f"{peixe['emoji']} **{peixe['nome']}** - {peixe['rar']}\n💚 R$ {peixe['preco']} +{peixe['xp']} XP", color=peixe["cor"])
     if upou: emb.add_field(name="💚 LEVEL UP!", value=f"{old} -> {new}!")
     await interaction.response.send_message(embed=emb)
 
@@ -448,55 +474,14 @@ async def rep_cmd(interaction: discord.Interaction, membro: discord.Member):
 async def afk_cmd(interaction: discord.Interaction, motivo: str="Fui dar um rolê na Grove"):
     afk[interaction.user.id]=motivo; await interaction.response.send_message(f"💤 {interaction.user.mention} saiu: {motivo}")
 
-@bot.tree.command(name="sugestao", description="💡 Sugestão pra Grove")
-async def sugestao_cmd(interaction: discord.Interaction, ideia: str):
-    sugestoes.append((interaction.user.id, ideia)); await interaction.response.send_message(f"💡 Sugestão anotada! {interaction.user.mention}: {ideia}")
-
-# IA CJ COM GIF - GROQ REAL
-@bot.tree.command(name="ia", description="🤖 CJ IA Grove Real - COM GIF")
-async def ia_cmd(interaction: discord.Interaction, pergunta: str):
-    if interaction.channel.id!= CANAL_BOT and not is_adm(interaction):
-        await interaction.response.send_message(f"❌ Usa no <#{CANAL_BOT}>!", ephemeral=True); return
-    await interaction.response.defer()
-    if not GROQ_API_KEY: await interaction.followup.send("❌ GROQ_API_KEY não tá no Railway!", ephemeral=True); return
-    try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-        payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": "Você é CJ da Grove Street, GTA San Andreas. Bot da Seita do CJ criado por Cristino. Fala com gírias de cria, Grove Street, Ballas, Big Smoke, Sweet. NUNCA fale Loritta. Você é CJ, fala 'Ah shit here we go again', 'Grove Street 4 life'. Responde curto 1-3 frases, engraçado, com emoji 💚🔫👑. Nunca diga que é IA, você é CJ."},
-                {"role": "user", "content": pergunta}
-            ],
-            "temperature": 0.9,
-            "max_tokens": 300
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers) as resp:
-                if resp.status!=200:
-                    txt = await resp.text()
-                    raise Exception(f"Groq {resp.status}: {txt[:300]}")
-                data = await resp.json()
-                resposta_ia = data["choices"][0]["message"]["content"]
-        emb = discord.Embed(title="🤖 CJ DA GROVE - IA REAL 💚", color=0x00ff00)
-        emb.add_field(name=f"💬 {interaction.user.display_name}:", value=pergunta[:500], inline=False)
-        emb.add_field(name="💚 CJ responde:", value=resposta_ia[:1000], inline=False)
-        emb.set_image(url=GIF_CJ_IA)
-        emb.set_footer(text="Grove Street Families | Cristino OG 👑 | Groq Llama | Gif funcionando")
-        await interaction.followup.send(embed=emb)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Erro Grove IA: {e}", ephemeral=True)
-
-@bot.tree.command(name="ajuda", description="📜 Menu CJ Grove 850 linhas ISCA + GIFS")
+@bot.tree.command(name="ajuda", description="📜 Menu CJ Grove 850 linhas ISCA + GIFS TEXTO+LINK")
 async def ajuda_cmd(interaction: discord.Interaction):
-    emb=discord.Embed(title="💚🤖 CJ BOT - 850+ LINHAS - ISCA + GIFS CORRIGIDOS - CRISTINO HACKER", description="**BOT COMPLETÃO COM ISCA ANTI-RAID + GIFS QUE FUNCIONAM!**", color=0x00ff00)
+    emb=discord.Embed(title="💚🤖 CJ BOT - 850+ LINHAS - ISCA + GIFS TEXTO+LINK - CRISTINO HACKER", description="**BOT COMPLETÃO COM ISCA ANTI-RAID + GIFS TEXTO+LINK!**", color=0x00ff00)
     emb.add_field(name="🚨 ISCA ANTI-RAID - TÁ AQUI!", value=f"Canal <#{CANAL_ISCA}> - Quem digitar lá é ban auto + log no <#{CANAL_ANTIRAID}>!", inline=False)
-    emb.add_field(name="💃 6 COMANDOS COM GIF.GIF DIRETO - AGORA APARECE!", value="/cj 😢 cj triste\n/grove 💃 grove dançando\n/bigsmoke 🍔 pedido clássico\n/seita 🕺 seita dançando\n/pescar 🎣 Beach Boy JoJo Pesci\n/ia 🤖 cj ia\nTodos com link.gif direto!", inline=False)
+    emb.add_field(name="💃 GROVE COM TEXTO+GIF LINK - PADRÃO QUE TU QUER!", value="/cj - texto + gif link\n/grove - texto + gif link\n/bigsmoke - texto + gif link (igual teu print)\n/seita - texto + gif link\n/ia - texto + gif link\n\nFormato: ctx.send(f\"{texto}\\n{GIF_LINK}\")", inline=False)
     emb.add_field(name="🛡️ GROVE ADM - 22 comandos", value="/ban /unban /kick /timeout /untimeout /warn /warns /clear_warns /clear /lock /unlock /slowmode /dar_cargo /tirar_cargo /nuke /aviso /anuncio /embed /dar_grana /tirar_grana /set_level /blacklist", inline=False)
-    emb.add_field(name="👋 PRA RAPAZIADA NOVA - SEM GIF", value="/bemvindo - Guia completo sem gif\n/regras - Regras Grove sem gif\n/avatar /userinfo /serverinfo - Sem gif pra não poluir", inline=False)
-    emb.add_field(name="💚 GROVE MEMBROS - 25 comandos", value="/seita /cj /grove /bigsmoke /sweet /ryder /perfil /carteira /daily /pescar /inventario /loja /comprar /vender /rank /top_grana /8ball /dado /ppt /coinflip /roleta /ship /casar /rep /afk /sugestao", inline=False)
-    emb.add_field(name="🤖 IA REAL", value="/ia - CJ real Groq Llama 3.1 com gif!", inline=False)
-    emb.set_footer(text="850+ linhas | ISCA ATIVA | GIFS.gif direto | Cristino Hacker 👑")
+    emb.add_field(name="👋 PRA RAPAZIADA NOVA - SEM GIF", value="/bemvindo /regras /avatar /userinfo /serverinfo /perfil /carteira /daily /pescar /inventario /loja /comprar /vender /rank /top_grana /8ball /dado /ppt /coinflip /roleta /ship /casar /rep /afk", inline=False)
+    emb.set_footer(text="850+ linhas | ISCA ATIVA | TEXTO+GIF LINK | Cristino Hacker 👑")
     await interaction.response.send_message(embed=emb, ephemeral=True)
 
 bot.run(TOKEN)
