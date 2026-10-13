@@ -170,7 +170,7 @@ async def on_member_join(member):
     ch = bot.get_channel(CANAL_BOAS_VINDAS)
     if ch:
         try:
-            emb = discord.Embed(title="Bem vindo a Seita!", description=f"{member.mention} entrou! Somos {member.guild.member_count}! Vai no <#{CANAL_BOT}> e digita /seita", color=0x00ff00)
+            emb = discord.Embed(title="Bem vindo Querido(a)!", description=f"{member.mention} entrou! Somos {member.guild.member_count}! Vai no <#{CANAL_BOT}> e digita /seita", color=0x00ff00)
             emb.set_thumbnail(url=member.display_avatar.url)
             await ch.send(embed=emb)
         except:
@@ -286,7 +286,7 @@ async def fake_ban_cmd(interaction: discord.Interaction, membro: discord.Member)
         return
     await interaction.response.send_message(f"🔨 {membro.mention} foi banido da Seita!")
     await asyncio.sleep(2)
-    await interaction.followup.send(f"Brincadeira {membro.mention}, continua na Seita 😏")
+    await interaction.followup.send(f"Voce foi banido... {membro.mention}, caiu na pegadinha do mario games")
 
 # CHEATS
 @bot.tree.command(name="pescar_cheat", description="[ADM CHEAT] Forcar peixe")
