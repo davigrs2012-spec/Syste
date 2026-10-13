@@ -16,6 +16,15 @@ CANAL_BOAS_VINDAS = 1558857282702409749
 CANAL_LOGS = 1559066250410197013
 CANAL_ISCA = 1559066250410197013
 
+# CARGOS QUE TU ME MANDOU
+CARGOS_LEVEL = {
+    1: 1559444021531770993,
+    5: 1559444648101945394,
+    10: 1559444288859938916,
+    15: 1559444486386360320,
+    20: 1559444978017505280,
+}
+
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -50,14 +59,24 @@ def add_xp(user_id, amount):
     data = level_db[user_id]
     data["xp"] += amount
     lvl_antigo = data["level"]
-    # 100 xp por level
     data["level"] = data["xp"] // 100 + 1
     return data["level"] > lvl_antigo, data["level"]
+
+async def dar_cargo_level(member, level):
+    if not member.guild: return
+    for lvl_req, cargo_id in sorted(CARGOS_LEVEL.items()):
+        if level >= lvl_req:
+            cargo = member.guild.get_role(cargo_id)
+            if cargo and cargo not in member.roles:
+                try:
+                    await member.add_roles(cargo, reason=f"Level {level} pesca")
+                except Exception as e:
+                    print(f"Erro cargo: {e}")
 
 # ================= EVENTOS =================
 @bot.event
 async def on_ready():
-    print(f"🔥 SUPERNOVA ON: {bot.user} | Cristino Taruishida no comando")
+    print(f"🔥 SUPERNOVA ON: {bot.user}")
     try:
         synced = await bot.tree.sync()
         print(f"Sync: {len(synced)} comandos")
@@ -72,6 +91,9 @@ async def on_member_join(member):
             embed = discord.Embed(title="Bem vindo a Seita!", description=f"{member.mention} entrou na Seita do CJ Vascaino!", color=0x00ff00)
             embed.set_thumbnail(url=member.display_avatar.url)
             await canal_bv.send(embed=embed)
+            cargo1 = member.guild.get_role(CARGOS_LEVEL[1])
+            if cargo1:
+                await member.add_roles(cargo1)
         except: pass
 
     if not anti_raid_ativado: return
@@ -79,7 +101,6 @@ async def on_member_join(member):
     recent_joins.append(agora)
     while recent_joins and (agora - recent_joins[0]).total_seconds() > 15:
         recent_joins.popleft()
-
     canal_log = bot.get_channel(CANAL_LOGS)
     idade = (agora - member.created_at).days
     if idade < 7:
@@ -97,16 +118,15 @@ async def on_member_join(member):
 @bot.event
 async def on_message(message):
     if message.author.bot: return
-
-    # Level por mensagem
     if message.guild:
         upou, lvl = add_xp(message.author.id, random.randint(1,3))
-        if upou and lvl % 5 == 0:
+        if upou:
             try:
-                await message.channel.send(f"🎉 {message.author.mention} upou pro level **{lvl}**!", delete_after=10)
+                await dar_cargo_level(message.author, lvl)
+                if lvl in CARGOS_LEVEL:
+                    await message.channel.send(f"🎉 {message.author.mention} upou pro level **{lvl}** e ganhou cargo!", delete_after=15)
             except: pass
 
-    # Canal isca
     if message.channel.id == CANAL_ISCA:
         if message.guild and message.author.guild_permissions.administrator:
             await bot.process_commands(message)
@@ -118,10 +138,9 @@ async def on_message(message):
             if log: await log.send(f"🪤 ISCA: {message.author} BANIDO")
         except: pass
         return
-
     await bot.process_commands(message)
 
-# ================= MODERAÇÃO SUPERNOVA =================
+# ================= MODERAÇÃO =================
 @bot.tree.command(name="antiraid", description="Controle do anti-raid")
 async def antiraid(interaction: discord.Interaction, acao: str):
     if not is_adm(interaction):
@@ -141,17 +160,14 @@ async def clear(interaction: discord.Interaction, quantidade: int):
         await interaction.response.send_message("Sem permissão!", ephemeral=True); return
     await interaction.response.defer(ephemeral=True)
     deleted = await interaction.channel.purge(limit=quantidade)
-    await interaction.followup.send(f"Apaguei {len(deleted)} mensagens!", ephemeral=True)
+    await interaction.followup.send(f"Apaguei {len(deleted)}!", ephemeral=True)
 
 @bot.tree.command(name="ban", description="Banir usuario")
 async def ban(interaction: discord.Interaction, membro: discord.Member, motivo: str = "Sem motivo"):
     if not interaction.user.guild_permissions.ban_members:
         await interaction.response.send_message("Sem permissão!", ephemeral=True); return
-    try:
-        await membro.ban(reason=motivo, delete_message_days=1)
-        await interaction.response.send_message(f"🔨 {membro.mention} BANIDO - {motivo}")
-    except Exception as e:
-        await interaction.response.send_message(f"Erro: {e}", ephemeral=True)
+    await membro.ban(reason=motivo, delete_message_days=1)
+    await interaction.response.send_message(f"🔨 {membro.mention} BANIDO - {motivo}")
 
 @bot.tree.command(name="kick", description="Kikar usuario")
 async def kick(interaction: discord.Interaction, membro: discord.Member, motivo: str = "Sem motivo"):
@@ -164,11 +180,8 @@ async def kick(interaction: discord.Interaction, membro: discord.Member, motivo:
 async def timeout(interaction: discord.Interaction, membro: discord.Member, minutos: int, motivo: str = "Sem motivo"):
     if not interaction.user.guild_permissions.moderate_members:
         await interaction.response.send_message("Sem permissão!", ephemeral=True); return
-    try:
-        await membro.timeout(timedelta(minutes=minutos), reason=motivo)
-        await interaction.response.send_message(f"🔇 {membro.mention} mutado por {minutos}min - {motivo}")
-    except Exception as e:
-        await interaction.response.send_message(f"Erro: {e}", ephemeral=True)
+    await membro.timeout(timedelta(minutes=minutos), reason=motivo)
+    await interaction.response.send_message(f"🔇 {membro.mention} mutado por {minutos}min")
 
 @bot.tree.command(name="untimeout", description="Desmutar usuario")
 async def untimeout(interaction: discord.Interaction, membro: discord.Member):
@@ -214,7 +227,7 @@ async def slowmode(interaction: discord.Interaction, segundos: int):
     await interaction.channel.edit(slowmode_delay=segundos)
     await interaction.response.send_message(f"🐢 Slowmode: {segundos}s")
 
-# ================= INFO E UTIL =================
+# ================= INFO =================
 @bot.tree.command(name="ping", description="Ver ping")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"Pong {round(bot.latency*1000)}ms")
@@ -249,17 +262,21 @@ async def avatar(interaction: discord.Interaction, membro: discord.Member = None
     embed.set_image(url=membro.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-# ================= ECONOMIA E PESCA SUPERNOVA =================
+# ================= ECONOMIA =================
 @bot.tree.command(name="pescar", description="Pesque um peixe")
 async def pescar(interaction: discord.Interaction):
     peixe = random.choices(lista_de_peixes, weights=[30,25,20,15,7,2,1], k=1)[0]
     inventario_db[interaction.user.id].append(peixe)
     carteira_db[interaction.user.id] += peixe["preco"]
     upou, lvl = add_xp(interaction.user.id, peixe["xp"])
+    if upou:
+        await dar_cargo_level(interaction.user, lvl)
 
     cor = {"Lixo": 0x808080, "Comum": 0x00ff00, "Raro": 0x0099ff, "Lendário": 0xffd700, "Épico": 0x9b59b6, "MÍTICO": 0xff0000}[peixe["raridade"]]
     embed = discord.Embed(title="🎣 Você pescou!", description=f"**{peixe['nome']}** {peixe['emoji']}\nRaridade: **{peixe['raridade']}**\nValor: R$ {peixe['preco']} | +{peixe['xp']} XP", color=cor)
     embed.set_footer(text=f"Carteira: R$ {carteira_db[interaction.user.id]} | Level: {level_db[interaction.user.id]['level']}")
+    if upou:
+        embed.add_field(name="🆙 LEVEL UP!", value=f"Chegou no level {lvl}!", inline=False)
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="inventario", description="Seu inventário")
@@ -270,7 +287,7 @@ async def inventario(interaction: discord.Interaction):
     c = Counter([f"{p['emoji']} {p['nome']} - R${p['preco']}" for p in itens])
     desc = "\n".join([f"{q}x {nome}" for nome, q in c.items()])
     embed = discord.Embed(title=f"🎒 {interaction.user.display_name}", description=desc[:4000], color=0x0099ff)
-    embed.set_footer(text=f"Carteira: R$ {carteira_db[interaction.user.id]} | Total: {len(itens)} peixes")
+    embed.set_footer(text=f"Carteira: R$ {carteira_db[interaction.user.id]}")
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="carteira", description="Ver sua grana")
@@ -300,7 +317,7 @@ async def vender(interaction: discord.Interaction):
     total = sum(p["preco"] for p in itens)
     carteira_db[interaction.user.id] += total
     inventario_db[interaction.user.id].clear()
-    await interaction.response.send_message(f"💸 Vendeu {len(itens)} peixes por R$ {total}! Carteira: R$ {carteira_db[interaction.user.id]}")
+    await interaction.response.send_message(f"💸 Vendeu {len(itens)} peixes por R$ {total}!")
 
 @bot.tree.command(name="daily", description="Resgate diário")
 async def daily(interaction: discord.Interaction):
@@ -313,7 +330,7 @@ async def daily(interaction: discord.Interaction):
     daily_db[interaction.user.id] = agora
     premio = random.randint(50, 150)
     carteira_db[interaction.user.id] += premio
-    await interaction.response.send_message(f"🎁 Daily: +R$ {premio}! Carteira: R$ {carteira_db[interaction.user.id]}")
+    await interaction.response.send_message(f"🎁 Daily: +R$ {premio}!")
 
 @bot.tree.command(name="rank", description="Seu level")
 async def rank(interaction: discord.Interaction, membro: discord.Member = None):
@@ -327,7 +344,7 @@ async def rank(interaction: discord.Interaction, membro: discord.Member = None):
 @bot.tree.command(name="8ball", description="Pergunte a bola mágica")
 async def eightball(interaction: discord.Interaction, pergunta: str):
     respostas = ["Sim", "Não", "Talvez", "Com certeza", "Nem ferrando", "Pergunta pro CJ", "Vasco", "É bait"]
-    await interaction.response.send_message(f"🎱 Pergunta: {pergunta}\nResposta: **{random.choice(respostas)}**")
+    await interaction.response.send_message(f"🎱 {pergunta}\n**{random.choice(respostas)}**")
 
 @bot.tree.command(name="coinflip", description="Cara ou coroa")
 async def coinflip(interaction: discord.Interaction):
@@ -337,13 +354,6 @@ async def coinflip(interaction: discord.Interaction):
 async def roll(interaction: discord.Interaction, lados: int = 6):
     await interaction.response.send_message(f"🎲 Rolou d{lados}: **{random.randint(1,lados)}**")
 
-@bot.tree.command(name="say", description="Fazer o bot falar (ADM)")
-async def say(interaction: discord.Interaction, texto: str):
-    if not is_adm(interaction):
-        await interaction.response.send_message("Só ADM!", ephemeral=True); return
-    await interaction.response.send_message("Enviado!", ephemeral=True)
-    await interaction.channel.send(texto)
-
 @bot.tree.command(name="poll", description="Criar enquete")
 async def poll(interaction: discord.Interaction, pergunta: str):
     embed = discord.Embed(title="📊 Enquete", description=pergunta, color=0x0099ff)
@@ -352,17 +362,20 @@ async def poll(interaction: discord.Interaction, pergunta: str):
     await msg.add_reaction("✅")
     await msg.add_reaction("❌")
 
-@bot.tree.command(name="ajuda", description="Todos os comandos da supernova")
+@bot.tree.command(name="ajuda", description="Todos os comandos")
 async def ajuda(interaction: discord.Interaction):
     embed = discord.Embed(title="💥 SUPERNOVA - SEITA DO CJ", description="Bot da Seita - Cristino Taruishida", color=0xff0000)
     embed.add_field(name="🛡️ Moderação", value="`/ban` `/kick` `/timeout` `/untimeout` `/warn` `/warns` `/clear` `/antiraid` `/lock` `/unlock` `/slowmode`", inline=False)
-    embed.add_field(name="🎣 Economia", value="`/pescar` `/inventario` `/carteira` `/vender` `/top` `/daily` `/rank`", inline=False)
+    embed.add_field(name="🎣 Economia + Cargos", value="`/pescar` `/inventario` `/carteira` `/vender` `/top` `/daily` `/rank`\nCargos auto: Level 1, 5, 10, 15, 20", inline=False)
     embed.add_field(name="📊 Info", value="`/ping` `/userinfo` `/serverinfo` `/avatar`", inline=False)
-    embed.add_field(name="🎮 Diversão", value="`/8ball` `/coinflip` `/roll` `/poll` `/say`", inline=False)
-    embed.set_footer(text="SUPERNOVA EDITION - Taruishida Cristino")
+    embed.add_field(name="🎮 Diversão", value="`/8ball` `/coinflip` `/roll` `/poll`", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ================= PREFIXO LEGADO =================
+@bot.tree.command(name="help", description="All commands")
+async def help_en(interaction: discord.Interaction):
+    embed = discord.Embed(title="💥 SUPERNOVA", description="Auto roles for fishing levels 1,5,10,15,20!", color=0xff0000)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.command(name="cj")
 async def cj(ctx):
     await ctx.send(f"{ctx.author.mention} Para de me marcar big smoke~kun")
