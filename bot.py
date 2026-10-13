@@ -1,7 +1,6 @@
 import os
 import random
 import discord
-from openai import OpenAI
 from discord.ext import commands
 from discord import app_commands
 from collections import deque, defaultdict, Counter
@@ -82,8 +81,11 @@ async def ban(interaction: discord.Interaction, membro: discord.Member, motivo: 
         return
     await membro.ban(reason=motivo, delete_message_days=1)
     await interaction.response.send_message(f"{membro.mention} BANIDO - {motivo}")
-    with open("/home/Cristino/bot.log", "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now().strftime('%d/%m %H:%M')}] BAN - {membro} foi banido por {interaction.user} | Motivo: {motivo}\n")
+    try:
+        with open("bot.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%d/%m %H:%M')}] BAN - {membro} foi banido por {interaction.user} | Motivo: {motivo}\n")
+    except:
+        pass
 
 @bot.tree.command(name="kick", description="Kikar usuario")
 async def kick(interaction: discord.Interaction, membro: discord.Member, motivo: str = "Sem motivo"):
@@ -92,8 +94,11 @@ async def kick(interaction: discord.Interaction, membro: discord.Member, motivo:
         return
     await membro.kick(reason=motivo)
     await interaction.response.send_message(f"{membro.mention} KIKADO - {motivo}")
-    with open("/home/Cristino/bot.log", "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now().strftime('%d/%m %H:%M')}] KICK - {membro} foi kickado por {interaction.user} | Motivo: {motivo}\n")
+    try:
+        with open("bot.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%d/%m %H:%M')}] KICK - {membro} foi kickado por {interaction.user} | Motivo: {motivo}\n")
+    except:
+        pass
 
 @bot.command(name="cj")
 async def cj(ctx):
@@ -113,10 +118,8 @@ async def on_member_join(member):
             await canal_bv.send(f"https://klipy.com/gifs/cj-and-sweet-cj-gta-sa")
         except:
             pass
-
     if not anti_raid_ativado:
         return
-
     agora = datetime.now(timezone.utc)
     recent_joins.append(agora)
     while recent_joins and (agora - recent_joins[0]).total_seconds() > 15:
@@ -175,40 +178,5 @@ async def inventario(interaction: discord.Interaction):
     embed = discord.Embed(title=f"🎒 Inventário de {interaction.user.display_name}", description=desc, color=0x0099ff)
     embed.set_footer(text=f"Carteira: R$ {carteira_db[interaction.user.id]}")
     await interaction.response.send_message(embed=embed)
-
-client_ia = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
-    base_url="https://api.groq.com/openai/v1"
-)
-
-@bot.tree.command(name="ia", description="Pergunte qualquer coisa pra IA")
-async def ia(interaction: discord.Interaction, pergunta: str):
-    await interaction.response.defer()
-    try:
-        resposta = client_ia.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[
-                {"role": "system", "content": "voce e o CJ, seja gangstar e legal no server do..."},
-                {"role": "user", "content": pergunta}
-            ]
-        )
-        texto = resposta.choices[0].message.content
-        await interaction.followup.send(f"**Você:** {pergunta}\n**IA:** {texto}")
-    except Exception as e:
-        await interaction.followup.send(f"Erro na IA: {e}")
-
-@bot.command()
-async def desligar(ctx):
-    if ctx.author.id!= 1461916890854068309:
-        return
-    await bot.change_presence(status=discord.Status.invisible)
-    await ctx.send("Fingi que desliguei 😴")
-
-@bot.command()
-async def ligar(ctx):
-    if ctx.author.id!= 1461916890854068309:
-        return
-    await bot.change_presence(status=discord.Status.online)
-    await ctx.send("Voltei, seu miserável aff")
 
 bot.run(TOKEN)
