@@ -4,8 +4,9 @@ import discord
 from openai import OpenAI
 from discord.ext import commands
 from discord import app_commands
-from collections import deque
+from collections import deque, defaultdict, Counter
 from datetime import datetime, timezone
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -25,6 +26,16 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 anti_raid_ativado = True
 recent_joins = deque()
+inventario_db = defaultdict(list)
+carteira_db = defaultdict(int)
+
+lista_de_peixes = [
+    {"nome": "Bota Velha", "emoji": "🥾", "raridade": "Lixo", "preco": 2},
+    {"nome": "Sardinha", "emoji": "🐟", "raridade": "Comum", "preco": 10},
+    {"nome": "Tilápia", "emoji": "🐟", "raridade": "Comum", "preco": 15},
+    {"nome": "Baiacu", "emoji": "🐡", "raridade": "Raro", "preco": 50},
+    {"nome": "Tubarão", "emoji": "🦈", "raridade": "Lendário", "preco": 250},
+]
 
 @bot.event
 async def on_ready():
@@ -71,7 +82,6 @@ async def ban(interaction: discord.Interaction, membro: discord.Member, motivo: 
         return
     await membro.ban(reason=motivo, delete_message_days=1)
     await interaction.response.send_message(f"{membro.mention} BANIDO - {motivo}")
-    # LOG PRO PAINEL
     with open("/home/Cristino/bot.log", "a", encoding="utf-8") as f:
         f.write(f"[{datetime.now().strftime('%d/%m %H:%M')}] BAN - {membro} foi banido por {interaction.user} | Motivo: {motivo}\n")
 
@@ -82,7 +92,6 @@ async def kick(interaction: discord.Interaction, membro: discord.Member, motivo:
         return
     await membro.kick(reason=motivo)
     await interaction.response.send_message(f"{membro.mention} KIKADO - {motivo}")
-    # LOG PRO PAINEL
     with open("/home/Cristino/bot.log", "a", encoding="utf-8") as f:
         f.write(f"[{datetime.now().strftime('%d/%m %H:%M')}] KICK - {membro} foi kickado por {interaction.user} | Motivo: {motivo}\n")
 
@@ -99,10 +108,15 @@ async def zoeira(ctx):
 async def on_member_join(member):
     canal_bv = bot.get_channel(CANAL_BOAS_VINDAS)
     if canal_bv:
-        try: await canal_bv.send(f"Boas vindas a Seita Do CJ Vascaino Baiano {member.mention}! ")
-             await canal_bv.send(f"https://klipy.com/gifs/cj-and-sweet-cj-gta-sa")
-        except: pass
-    if not anti_raid_ativado: return
+        try:
+            await canal_bv.send(f"Boas vindas a Seita Do CJ Vascaino Bem vindo {member.mention}")
+            await canal_bv.send(f"https://klipy.com/gifs/cj-and-sweet-cj-gta-sa")
+        except:
+            pass
+
+    if not anti_raid_ativado:
+        return
+
     agora = datetime.now(timezone.utc)
     recent_joins.append(agora)
     while recent_joins and (agora - recent_joins[0]).total_seconds() > 15:
@@ -112,18 +126,23 @@ async def on_member_join(member):
     if idade < 7:
         try:
             await member.kick(reason=f"Conta nova {idade}d")
-            if canal_log: await canal_log.send(f"🚨 KICK: {member} | {idade} dias")
-        except: pass
+            if canal_log:
+                await canal_log.send(f"🚨 KICK: {member} | {idade} dias")
+        except:
+            pass
         return
     if len(recent_joins) >= 5:
         try:
             await member.ban(reason="Raid", delete_message_days=1)
-            if canal_log: await canal_log.send(f"🔥 RAID: {member} BANIDO")
-        except: pass
+            if canal_log:
+                await canal_log.send(f"🔥 RAID: {member} BANIDO")
+        except:
+            pass
 
 @bot.event
 async def on_message(message):
-    if message.author.bot: return
+    if message.author.bot:
+        return
     if message.channel.id == CANAL_ISCA:
         if message.author.guild_permissions.administrator:
             await bot.process_commands(message)
@@ -131,23 +150,10 @@ async def on_message(message):
         try:
             await message.delete()
             await message.guild.ban(message.author, reason="Isca", delete_message_days=1)
-        except: pass
+        except:
+            pass
         return
     await bot.process_commands(message)
-    
-import random
-from collections import defaultdict
-
-inventario_db = defaultdict(list)
-carteira_db = defaultdict(int)
-
-lista_de_peixes = [
-    {"nome": "Bota Velha", "emoji": "🥾", "raridade": "Lixo", "preco": 2},
-    {"nome": "Sardinha", "emoji": "🐟", "raridade": "Comum", "preco": 10},
-    {"nome": "Tilápia", "emoji": "🐟", "raridade": "Comum", "preco": 15},
-    {"nome": "Baiacu", "emoji": "🐡", "raridade": "Raro", "preco": 50},
-    {"nome": "Tubarão", "emoji": "🦈", "raridade": "Lendário", "preco": 250},
-]
 
 @bot.tree.command(name="pescar", description="Pesque um peixe e ganhe dinheiro")
 async def pescar(interaction: discord.Interaction):
@@ -164,24 +170,20 @@ async def inventario(interaction: discord.Interaction):
     if not itens:
         await interaction.response.send_message("Inventário vazio. Use /pescar!", ephemeral=True)
         return
-    from collections import Counter
     c = Counter([f"{p['emoji']} {p['nome']}" for p in itens])
     desc = "\n".join([f"{q}x {nome}" for nome, q in c.items()])
     embed = discord.Embed(title=f"🎒 Inventário de {interaction.user.display_name}", description=desc, color=0x0099ff)
     embed.set_footer(text=f"Carteira: R$ {carteira_db[interaction.user.id]}")
     await interaction.response.send_message(embed=embed)
-    
-import os
+
 client_ia = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
 )
 
-
 @bot.tree.command(name="ia", description="Pergunte qualquer coisa pra IA")
 async def ia(interaction: discord.Interaction, pergunta: str):
-    await interaction.response.defer() # pensa
-
+    await interaction.response.defer()
     try:
         resposta = client_ia.chat.completions.create(
             model="openai/gpt-oss-20b",
@@ -195,18 +197,18 @@ async def ia(interaction: discord.Interaction, pergunta: str):
     except Exception as e:
         await interaction.followup.send(f"Erro na IA: {e}")
 
-    
 @bot.command()
 async def desligar(ctx):
-    if ctx.author.id != 1461916890854068309: return
+    if ctx.author.id!= 1461916890854068309:
+        return
     await bot.change_presence(status=discord.Status.invisible)
     await ctx.send("Fingi que desliguei 😴")
 
 @bot.command()
 async def ligar(ctx):
-    if ctx.author.id != 1461916890854068309: return
+    if ctx.author.id!= 1461916890854068309:
+        return
     await bot.change_presence(status=discord.Status.online)
     await ctx.send("Voltei, seu miserável aff")
-    
-bot.run(TOKEN)
 
+bot.run(TOKEN)
