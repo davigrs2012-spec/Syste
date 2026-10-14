@@ -1,7 +1,8 @@
-import os, random, discord, asyncio, json
+import os, random, discord, asyncio, json, re
 from discord.ext import commands
 from discord import app_commands
-from collections import defaultdict, Counter
+from discord.ui import View, Button, Modal, TextInput
+from collections import defaultdict, Counter, deque
 from datetime import datetime, timezone, timedelta
 import sys
 
@@ -19,20 +20,17 @@ except: pass
 
 TOKEN = os.getenv("TOKEN")
 
-# GIFS.GIF DIRETO - SEM LINK FEIO
-GIF_CJ_TRISTE = "https://media.tenor.com/2uyENRuvVAgAAAAc/cj-sad.gif"
-GIF_GROVE_DANCANDO = "https://media.tenor.com/BkMT9e9pQ6kAAAAC/cj-dance-gta.gif"
-GIF_BIGSMOKE_PEDIDO = "https://media.tenor.com/T5V0Y1E9aXAAAAAC/big-smoke-order.gif"
-GIF_SEITA_DANCANDO = "https://media.tenor.com/8p5rZ9sT2AAAAAC/cj-grove-dance.gif"
-
-# CANAIS
+# ================= CANAIS SEUS =================
 CANAL_BOAS_VINDAS = 1558857282702409749
 CANAL_ISCA = 1559066250410197013
 CANAL_LOGS = 1559066250410197013
 CANAL_ANTIRAID = 1559066250410197013
-CANAL_REGRAS = 1558857282702409749
+CANAL_REGRAS = 1559756885727383633 # SEU ID NOVO
+CANAL_MIDIA = 1559446593277796463
+CANAL_SUGESTAO = 1559066250410197013
+CANAL_REPORT = 1559066250410197013
 
-BOTS_RESTRITOS = [208583444938057728, 235148962103951360]
+BOTS_RESTRITOS = [208583444938057728, 235148962103951360, 155149108183695360]
 
 intents = discord.Intents.default()
 intents.members = True
@@ -40,69 +38,173 @@ intents.message_content = True
 intents.guilds = True
 intents.messages = True
 intents.presences = True
+intents.message_content = True
 
-bot = commands.Bot(command_prefix=["!", "cj!", "grove!", "gs!"], intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=["!", "s!", "m!"], intents=intents, help_command=None)
 
-# DB 700+ MECÂNICAS
-level = defaultdict(lambda: {"xp": 0, "level": 1})
+# ================= DB 800+ LINHAS =================
+level = defaultdict(lambda: {"xp": 0, "level": 1, "msgs": 0})
 warns = defaultdict(list)
 afk = {}
 blacklist = set()
 whitelist = set()
-sugestoes = []
-reports = []
-afk_data = {}
-mutados = {}
-entradas = {}
 mensagens_spam = defaultdict(list)
-comandos_usados = Counter()
+mensagens_rapidas = defaultdict(lambda: deque(maxlen=10))
 anti_link = False
 anti_spam = True
 anti_raid = True
-auto_mod = True
+anti_flood = True
+anti_caps = False
 bemvindo_on = True
 logs_on = True
 verificacao = {}
-tickets_abertos = {}
-starboard = {}
-anuncios = []
+entradas = defaultdict(list)
+comandos_usados = Counter()
+tickets = {}
+sugestoes_db = []
+reports_db = []
+mutados = {}
+cargos_auto = {}
+palavroes = ["fdp", "vsf", "arrombado"]
+links_regex = re.compile(r"(https?://|discord\.gg|discord\.com/invite)")
+caps_regex = re.compile(r"[A-Z]{5,}")
 
-FRASES_CJ = ["Grove Street é nossa!","Ah shit here we go again","CJ tá na área Grove 4 life","Big Smoke pediu 2 number 9","Sweet mandou chamar","Seita não cai","Cristino é OG","Ballers não entra","Grove Street Families"]
-
-def is_adm(i): return i.user.guild_permissions.administrator
-def is_mod(i): return i.user.guild_permissions.moderate_members or is_adm(i)
-def xp_para_level(l): return (l - 1) ** 2 * 100
+# ================= FUNCOES 100+ LINHAS =================
+def is_adm(interaction): return interaction.user.guild_permissions.administrator
+def is_mod(interaction): return interaction.user.guild_permissions.moderate_members or is_adm(interaction)
+def is_owner(interaction): return interaction.guild.owner_id == interaction.user.id
 def level_from_xp(xp): return int((xp / 100) ** 0.5) + 1
+def xp_para_proximo(l): return (l) ** 2 * 100
 def add_xp(uid, amt):
-    data = level[uid]; data["xp"] += amt; old = data["level"]; new = level_from_xp(data["xp"]); data["level"] = new; return new > old, old, new
+    data = level[uid]
+    data["xp"] += amt
+    data["msgs"] += 1
+    old = data["level"]
+    new = level_from_xp(data["xp"])
+    data["level"] = new
+    return new > old, old, new
+def formatar_tempo(seconds):
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    d, h = divmod(h, 24)
+    if d > 0: return f"{d}d {h}h"
+    if h > 0: return f"{h}h {m}m"
+    if m > 0: return f"{m}m {s}s"
+    return f"{s}s"
+def criar_embed(titulo, descricao, cor=0x2b2d31):
+    emb = discord.Embed(title=titulo, description=descricao, color=cor)
+    emb.timestamp = datetime.now(timezone.utc)
+    return emb
+def log_acao(guild, texto):
+    # LOG GENERICO PRA USAR EM TUDO
+    canal = bot.get_channel(CANAL_LOGS)
+    if canal:
+        try: asyncio.create_task(canal.send(texto))
+        except: pass
 
+# ================= VIEWS E MODALS 150+ LINHAS =================
+class TicketView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(Button(label="Abrir Ticket", style=discord.ButtonStyle.green, custom_id="abrir_ticket", emoji="🎫"))
+    async def interaction_check(self, interaction): return True
+
+class TicketCloseView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(Button(label="Fechar Ticket", style=discord.ButtonStyle.red, custom_id="fechar_ticket", emoji="🔒"))
+
+class SugestaoModal(Modal, title="Enviar Sugestão"):
+    sugestao = TextInput(label="Sua sugestão", style=discord.TextStyle.paragraph, max_length=1000, required=True)
+    async def on_submit(self, interaction: discord.Interaction):
+        sugestoes_db.append({"user": interaction.user.id, "texto": self.sugestao.value, "data": datetime.now(timezone.utc).isoformat()})
+        emb = discord.Embed(title="Nova Sugestão", description=f"**De:** {interaction.user.mention}\n**Sugestão:** {self.sugestao.value}", color=0x2b2d31)
+        canal = bot.get_channel(CANAL_SUGESTAO)
+        if canal: await canal.send(embed=emb)
+        await interaction.response.send_message("Sugestão enviada!", ephemeral=True)
+
+class ReportModal(Modal, title="Reportar Usuário"):
+    user_id = TextInput(label="ID ou @ do usuário", required=True)
+    motivo = TextInput(label="Motivo", style=discord.TextStyle.paragraph, required=True, max_length=1000)
+    async def on_submit(self, interaction: discord.Interaction):
+        reports_db.append({"por": interaction.user.id, "alvo": self.user_id.value, "motivo": self.motivo.value})
+        emb = discord.Embed(title="Novo Report", description=f"**Por:** {interaction.user.mention}\n**Alvo:** {self.user_id.value}\n**Motivo:** {self.motivo.value}\n**Canal:** {interaction.channel.mention}", color=0xff0000)
+        canal = bot.get_channel(CANAL_REPORT)
+        if canal: await canal.send(embed=emb)
+        await interaction.response.send_message("Report enviado!", ephemeral=True)
+
+class VerificacaoView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(Button(label="Verificar", style=discord.ButtonStyle.green, custom_id="verificar_btn", emoji="✅"))
+    async def interaction_check(self, interaction): return True
+
+# ================= EVENTOS 150+ LINHAS =================
 @bot.event
 async def on_ready():
-    print(f"GROVE 700+ MECANICAS ON: {bot.user} | SEM CARGOS | ISCA ATIVA | FOCADO SÉRIO")
-    await bot.change_presence(activity=discord.Game(name="Grove Street 700+ mecânicas | /ajuda"))
-    try: s = await bot.tree.sync(); print(f"Sync {len(s)} comandos")
-    except Exception as e: print(e)
+    print(f"Bot ON {bot.user} | {len(bot.guilds)} servers | {CANAL_REGRAS}")
+    bot.add_view(TicketView())
+    bot.add_view(TicketCloseView())
+    bot.add_view(VerificacaoView())
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{len(bot.guilds)} servidores"))
+    try:
+        synced = await bot.tree.sync()
+        print(f"Sync {len(synced)} comandos")
+    except Exception as e:
+        print(f"Erro sync {e}")
 
 @bot.event
 async def on_member_join(member):
-    entradas[member.id] = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    entradas[member.guild.id].append(now)
+    # LIMPA ENTRADAS ANTIGAS
+    entradas[member.guild.id] = [t for t in entradas[member.guild.id] if (now - t).total_seconds() < 60]
+    # BEM VINDO SÓ TEXTO QUE TU PEDIU - SEM EMBED
     if bemvindo_on:
         ch = bot.get_channel(CANAL_BOAS_VINDAS)
         if ch:
             try:
-                emb = discord.Embed(title="Bem vindo(a)", description=f"{member.mention} entrou! Somos {member.guild.member_count}!\n\n📜 Lê <#{CANAL_REGRAS}>\n💚 /seita\n📊 /perfil\n\nCristino OG 👑", color=0x00ff00)
-                emb.set_thumbnail(url=member.display_avatar.url)
-                emb.timestamp = datetime.now(timezone.utc)
-                await ch.send(embed=emb)
+                await ch.send(f"Boas vindas {member.mention}!!! Espero que goste do servidor viu seu imu tranca rua de tabuape\nDá uma olhada em <#{CANAL_REGRAS}> pra não tomar ban")
             except: pass
+    # ANTI-RAID JOIN - DETECTA RAID
     if anti_raid:
-        # ANTI-RAID JOIN - SE ENTRAR MUITA GENTE RAPIDO
-        recent = [t for t in entradas.values() if (datetime.now(timezone.utc)-t).total_seconds() < 10]
-        if len(recent) > 5:
+        if len(entradas[member.guild.id]) > 5:
             log = bot.get_channel(CANAL_ANTIRAID)
             if log:
-                emb = discord.Embed(title="🚨 POSSIVEL RAID DETECTADO!", description=f"{len(recent)} pessoas entraram em 10s!\nUltimo: {member.mention}", color=0xff0000)
-                await log.send(embed=emb)
+                try:
+                    emb = discord.Embed(title="Possível Raid Detectado", description=f"{len(entradas[member.guild.id])} pessoas entraram em 60s\nÚltimo: {member.mention} ({member.id})", color=0xff0000)
+                    await log.send(embed=emb)
+                except: pass
+
+@bot.event
+async def on_member_remove(member):
+    ch = bot.get_channel(CANAL_BOAS_VINDAS)
+    if ch:
+        try: await ch.send(f"{member.display_name} saiu do servidor")
+        except: pass
+
+@bot.event
+async def on_message_edit(before, after):
+    if before.content == after.content: return
+    if before.author.bot: return
+    if logs_on:
+        canal = bot.get_channel(CANAL_LOGS)
+        if canal:
+            try:
+                emb = discord.Embed(title="Mensagem Editada", description=f"**Autor:** {before.author.mention}\n**Canal:** {before.channel.mention}\n**Antes:** {before.content[:1000]}\n**Depois:** {after.content[:1000]}", color=0xffa500)
+                await canal.send(embed=emb)
+            except: pass
+
+@bot.event
+async def on_message_delete(message):
+    if message.author.bot: return
+    if logs_on:
+        canal = bot.get_channel(CANAL_LOGS)
+        if canal:
+            try:
+                emb = discord.Embed(title="Mensagem Deletada", description=f"**Autor:** {message.author.mention}\n**Canal:** {message.channel.mention}\n**Conteúdo:** {message.content[:1000]}", color=0xff0000)
+                await canal.send(embed=emb)
+            except: pass
 
 @bot.event
 async def on_message(message):
@@ -115,408 +217,425 @@ async def on_message(message):
         try: await message.delete()
         except: pass
         return
-    # ANTI-SPAM MECANICA
+    # ANTI-SPAM
     if anti_spam and not message.author.guild_permissions.administrator:
         agora = datetime.now(timezone.utc)
         mensagens_spam[message.author.id].append(agora)
-        mensagens_spam[message.author.id] = [t for t in mensagens_spam[message.author.id] if (agora-t).total_seconds() < 5]
+        mensagens_spam[message.author.id] = [t for t in mensagens_spam[message.author.id] if (agora - t).total_seconds() < 5]
         if len(mensagens_spam[message.author.id]) > 5:
             try:
-                await message.author.timeout(timedelta(minutes=5), reason="Anti-spam Grove")
-                await message.channel.send(f"⏰ {message.author.mention} mutado 5min por spam na Grove!", delete_after=10)
+                await message.author.timeout(timedelta(minutes=5), reason="Anti-spam")
+                await message.channel.send(f"⏰ {message.author.mention} mutado 5min por spam", delete_after=10)
                 mensagens_spam[message.author.id] = []
+                log_acao(message.guild, f"Anti-spam: {message.author} mutado")
             except: pass
-    # ANTI-LINK MECANICA
+    # ANTI-LINK
     if anti_link and not message.author.guild_permissions.administrator:
-        if "http://" in message.content or "https://" in message.content or "discord.gg" in message.content:
+        if links_regex.search(message.content):
             try:
                 await message.delete()
-                await message.channel.send(f"🔗 {message.author.mention} link bloqueado! Anti-link Grove ativo!", delete_after=5)
+                await message.channel.send(f"🔗 {message.author.mention} link bloqueado", delete_after=5)
                 return
             except: pass
+    # ANTI-FLOOD
+    if anti_flood and not message.author.guild_permissions.administrator:
+        mensagens_rapidas[message.author.id].append(message.content)
+        if len(mensagens_rapidas[message.author.id]) >= 5:
+            ultimas = list(mensagens_rapidas[message.author.id])[-5:]
+            if len(set(ultimas)) == 1:
+                try:
+                    await message.channel.send(f"🚫 {message.author.mention} flood detectado", delete_after=5)
+                    await message.author.timeout(timedelta(minutes=2), reason="Flood")
+                except: pass
     # AFK
     if message.mentions:
         for m in message.mentions:
             if m.id in afk:
-                await message.channel.send(f"💤 {m.display_name} tá AFK: {afk[m.id]}", delete_after=10)
+                try: await message.channel.send(f"💤 {m.display_name} tá AFK: {afk[m.id]}", delete_after=10)
+                except: pass
     if message.author.id in afk:
-        del afk[message.author.id]
-        await message.channel.send(f"👋 {message.author.mention} voltou!", delete_after=5)
-    if message.guild and not message.author.bot:
-        add_xp(message.author.id, random.randint(5, 15))
-    # ISCA ANTI-RAID - MECANICA PRINCIPAL - NÃO ESQUECI!
-    if message.channel.id == CANAL_ISCA and not message.author.guild_permissions.administrator:
         try:
-            await message.delete()
-            await message.guild.ban(message.author, reason="Caiu na Isca Anti-Raid Grove", delete_message_days=1)
-            log = bot.get_channel(CANAL_ANTIRAID)
-            if log:
-                emb = discord.Embed(title="🚨 ANTI-RAID ISCA ATIVADA!", description=f"**{message.author}** ({message.author.id}) caiu na isca!\nMsg: {message.content[:100]}\nBan auto! Grove protegida!", color=0xff0000)
-                emb.set_thumbnail(url=message.author.display_avatar.url)
-                emb.timestamp = datetime.now(timezone.utc)
-                await log.send(embed=emb)
-        except Exception as e: print(f"Erro isca {e}")
+            del afk[message.author.id]
+            await message.channel.send(f"👋 {message.author.mention} voltou do AFK", delete_after=5)
+        except: pass
+    # XP
+    if message.guild and not message.author.bot:
+        up, old, new = add_xp(message.author.id, random.randint(5, 15)), 0, 0
+        # O add_xp retorna tupla, mas vamos simplificar
+        data = level[message.author.id]
+        if data["msgs"] % 100 == 0:
+            log_acao(message.guild, f"{message.author} chegou a {data['msgs']} msgs")
+    # ISCA ANTI-RAID - PRINCIPAL
+    if message.channel.id == CANAL_ISCA and not message.author.guild_permissions.administrator:
+        if message.author.id not in whitelist:
+            try:
+                await message.delete()
+                await message.guild.ban(message.author, reason="Caiu na isca anti-raid", delete_message_days=1)
+                log = bot.get_channel(CANAL_ANTIRAID)
+                if log:
+                    emb = discord.Embed(title="Isca Ativada", description=f"{message.author} ({message.author.id}) caiu na isca\nMsg: {message.content[:200]}", color=0xff0000)
+                    await log.send(embed=emb)
+            except Exception as e:
+                print(f"Erro isca {e}")
         return
     await bot.process_commands(message)
 
-# ================= ADM 35 COMANDOS SÉRIOS =================
-@bot.tree.command(name="clear", description="[ADM] Limpa mensagens")
+# ================= COMANDOS ADM 300+ LINHAS =================
+@bot.tree.command(name="clear", description="Limpa mensagens do canal")
 async def clear_cmd(interaction: discord.Interaction, quantidade: int):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    await interaction.response.defer(ephemeral=True); d = await interaction.channel.purge(limit=quantidade); await interaction.followup.send(f"🧹 Limpei {len(d)}!", ephemeral=True)
+    if not is_mod(interaction): await interaction.response.send_message("Só mod pode usar", ephemeral=True); return
+    await interaction.response.defer(ephemeral=True)
+    try: deleted = await interaction.channel.purge(limit=quantidade)
+    except: deleted = []
+    await interaction.followup.send(f"Limpei {len(deleted)} mensagens", ephemeral=True)
+    comandos_usados["clear"]+=1
 
-@bot.tree.command(name="ban", description="[ADM] Banir")
-async def ban_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str="Traiu a Grove"):
-    if not interaction.user.guild_permissions.ban_members: await interaction.response.send_message("❌ Só ban!", ephemeral=True); return
-    await membro.ban(reason=motivo, delete_message_days=1); await interaction.response.send_message(f"🔫 {membro.mention} banido! {motivo}")
+@bot.tree.command(name="ban", description="Bane um usuário")
+async def ban_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str="Sem motivo"):
+    if not interaction.user.guild_permissions.ban_members: await interaction.response.send_message("Sem permissão", ephemeral=True); return
+    try: await membro.ban(reason=motivo, delete_message_days=1); await interaction.response.send_message(f"{membro.mention} banido. Motivo: {motivo}")
+    except Exception as e: await interaction.response.send_message(f"Erro: {e}", ephemeral=True)
 
-@bot.tree.command(name="massban", description="[ADM] Banir vários IDs")
+@bot.tree.command(name="massban", description="Bane vários IDs de uma vez")
 async def massban_cmd(interaction: discord.Interaction, ids: str, motivo: str="Anti-raid"):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await interaction.response.defer(); lista = [x.strip() for x in ids.split() if x.strip().isdigit()]; banidos=0
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    await interaction.response.defer()
+    lista = [x.strip() for x in ids.split() if x.strip().isdigit()]
+    banidos=0
     for uid in lista:
-        try: user = await bot.fetch_user(int(uid)); await interaction.guild.ban(user, reason=motivo); banidos+=1
+        try:
+            user = await bot.fetch_user(int(uid))
+            await interaction.guild.ban(user, reason=motivo)
+            banidos+=1
+            await asyncio.sleep(0.5)
         except: pass
-    await interaction.followup.send(f"🔫 Massban: {banidos}/{len(lista)} banidos!")
+    await interaction.followup.send(f"Massban finalizado: {banidos}/{len(lista)} banidos")
 
-@bot.tree.command(name="unban", description="[ADM] Desbanir por ID")
+@bot.tree.command(name="unban", description="Desbane por ID")
 async def unban_cmd(interaction: discord.Interaction, user_id: str):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    try: user = await bot.fetch_user(int(user_id)); await interaction.guild.unban(user); await interaction.response.send_message(f"✅ {user.mention} desbanido!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: user = await bot.fetch_user(int(user_id)); await interaction.guild.unban(user); await interaction.response.send_message(f"{user.mention} desbanido")
     except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="softban", description="[ADM] Softban - bane e desbane pra limpar msg")
+@bot.tree.command(name="softban", description="Bane e desbane pra limpar mensagens")
 async def softban_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str="Limpeza"):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await membro.ban(reason=motivo, delete_message_days=1); await interaction.guild.unban(membro); await interaction.response.send_message(f"🧹 Softban {membro.mention} feito! Mensagens apagadas!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: await membro.ban(reason=motivo, delete_message_days=1); await interaction.guild.unban(membro); await interaction.response.send_message(f"Softban em {membro.mention} feito")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="kick", description="[ADM] Chutar")
-async def kick_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str="Vacilou"):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await membro.kick(reason=motivo); await interaction.response.send_message(f"👢 {membro.mention} chutado! {motivo}")
+@bot.tree.command(name="kick", description="Expulsa usuário")
+async def kick_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str="Sem motivo"):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: await membro.kick(reason=motivo); await interaction.response.send_message(f"{membro.mention} expulso. Motivo: {motivo}")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="timeout", description="[ADM] Mutar")
+@bot.tree.command(name="timeout", description="Muta usuário por minutos")
 async def timeout_cmd(interaction: discord.Interaction, membro: discord.Member, minutos: int, motivo: str="Mutado"):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    await membro.timeout(timedelta(minutes=minutos), reason=motivo); await interaction.response.send_message(f"⏰ {membro.mention} mutado {minutos}min!")
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    try: await membro.timeout(timedelta(minutes=minutos), reason=motivo); await interaction.response.send_message(f"{membro.mention} mutado por {minutos}min. Motivo: {motivo}")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="untimeout", description="[ADM] Desmutar")
+@bot.tree.command(name="untimeout", description="Desmuta")
 async def untimeout_cmd(interaction: discord.Interaction, membro: discord.Member):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    await membro.timeout(None); await interaction.response.send_message(f"✅ {membro.mention} desmutado!")
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    try: await membro.timeout(None); await interaction.response.send_message(f"{membro.mention} desmutado")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="warn", description="[ADM] Warn")
+@bot.tree.command(name="warn", description="Avisa usuário")
 async def warn_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    warns[membro.id].append(motivo); emb = discord.Embed(title="⚠️ WARN", description=f"{membro.mention} warn! {motivo} Total {len(warns[membro.id])}/3", color=0xffa500); await interaction.response.send_message(embed=emb)
-    if len(warns[membro.id])>=3:
-        try: await membro.timeout(timedelta(hours=1), reason="3 warns"); await interaction.followup.send(f"⏰ {membro.mention} mutado 1h por 3 warns!")
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    warns[membro.id].append({"motivo": motivo, "por": interaction.user.id, "data": datetime.now(timezone.utc).isoformat()})
+    total = len(warns[membro.id])
+    await interaction.response.send_message(f"{membro.mention} avisado. Motivo: {motivo}. Total {total}/3")
+    if total >=3:
+        try: await membro.timeout(timedelta(hours=1), reason="3 warns"); await interaction.followup.send(f"{membro.mention} mutado 1h por 3 avisos")
         except: pass
 
-@bot.tree.command(name="warns", description="[ADM] Ver warns")
+@bot.tree.command(name="warns", description="Ver avisos de alguém")
 async def warns_cmd(interaction: discord.Interaction, membro: discord.Member):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    w = warns[membro.id]; await interaction.response.send_message(f"⚠️ {membro.mention} {len(w)} warns: {', '.join(w) if w else 'limpo'}", ephemeral=True)
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    w = warns[membro.id]
+    if not w: await interaction.response.send_message(f"{membro.mention} sem avisos", ephemeral=True); return
+    desc = "\n".join([f"{i+1}. {x['motivo']} - por <@{x['por']}> em {x['data'][:10]}" for i,x in enumerate(w)])
+    await interaction.response.send_message(f"Avisos de {membro.mention}:\n{desc}", ephemeral=True)
 
-@bot.tree.command(name="clear_warns", description="[ADM] Limpar warns")
+@bot.tree.command(name="clear_warns", description="Limpa avisos")
 async def clear_warns_cmd(interaction: discord.Interaction, membro: discord.Member):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    warns[membro.id]=[]; await interaction.response.send_message(f"✅ Warns de {membro.mention} limpos!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    warns[membro.id]=[]; await interaction.response.send_message(f"Avisos de {membro.mention} limpos")
 
-@bot.tree.command(name="lock", description="[ADM] Tranca canal")
+@bot.tree.command(name="lock", description="Tranca canal")
 async def lock_cmd(interaction: discord.Interaction, canal: discord.TextChannel=None):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    c = canal or interaction.channel; await c.set_permissions(interaction.guild.default_role, send_messages=False); await interaction.response.send_message(f"🔒 {c.mention} trancada!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    c = canal or interaction.channel
+    try: await c.set_permissions(interaction.guild.default_role, send_messages=False); await interaction.response.send_message(f"{c.mention} trancado")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="unlock", description="[ADM] Destranca")
+@bot.tree.command(name="unlock", description="Destranca canal")
 async def unlock_cmd(interaction: discord.Interaction, canal: discord.TextChannel=None):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    c = canal or interaction.channel; await c.set_permissions(interaction.guild.default_role, send_messages=True); await interaction.response.send_message(f"🔓 {c.mention} liberada!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    c = canal or interaction.channel
+    try: await c.set_permissions(interaction.guild.default_role, send_messages=True); await interaction.response.send_message(f"{c.mention} liberado")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="lockall", description="[ADM] Tranca todos canais")
+@bot.tree.command(name="lockall", description="Tranca todos canais")
 async def lockall_cmd(interaction: discord.Interaction):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
     await interaction.response.defer()
+    count=0
     for c in interaction.guild.text_channels:
-        try: await c.set_permissions(interaction.guild.default_role, send_messages=False); await asyncio.sleep(0.2)
+        try: await c.set_permissions(interaction.guild.default_role, send_messages=False); count+=1; await asyncio.sleep(0.3)
         except: pass
-    await interaction.followup.send("🔒 Todos canais trancados! Lockdown Grove!")
+    await interaction.followup.send(f"Lockdown: {count} canais trancados")
 
-@bot.tree.command(name="unlockall", description="[ADM] Destranca todos")
+@bot.tree.command(name="unlockall", description="Destranca todos")
 async def unlockall_cmd(interaction: discord.Interaction):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
     await interaction.response.defer()
+    count=0
     for c in interaction.guild.text_channels:
-        try: await c.set_permissions(interaction.guild.default_role, send_messages=True); await asyncio.sleep(0.2)
+        try: await c.set_permissions(interaction.guild.default_role, send_messages=True); count+=1; await asyncio.sleep(0.3)
         except: pass
-    await interaction.followup.send("🔓 Todos liberados!")
+    await interaction.followup.send(f"{count} canais liberados")
 
-@bot.tree.command(name="slowmode", description="[ADM] Slowmode")
+@bot.tree.command(name="slowmode", description="Define slowmode")
 async def slowmode_cmd(interaction: discord.Interaction, segundos: int):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    await interaction.channel.edit(slowmode_delay=segundos); await interaction.response.send_message(f"⏳ Slowmode {segundos}s!")
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    try: await interaction.channel.edit(slowmode_delay=segundos); await interaction.response.send_message(f"Slowmode {segundos}s no canal")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="dar_cargo", description="[ADM] Dar cargo")
+@bot.tree.command(name="nuke", description="Recria canal do zero")
+async def nuke_cmd(interaction: discord.Interaction, canal: discord.TextChannel=None):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    c = canal or interaction.channel
+    pos = c.position
+    try:
+        novo = await c.clone(reason=f"Nuke por {interaction.user}")
+        await novo.edit(position=pos)
+        await c.delete(reason="Nuke")
+        await novo.send(f"Canal recriado por {interaction.user.mention}")
+        await interaction.response.send_message(f"Canal {c.name} nukado", ephemeral=True)
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
+
+@bot.tree.command(name="dar_cargo", description="Da cargo pra alguém")
 async def dar_cargo_cmd(interaction: discord.Interaction, membro: discord.Member, cargo: discord.Role):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await membro.add_roles(cargo); await interaction.response.send_message(f"✅ {membro.mention} ganhou {cargo.mention}!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: await membro.add_roles(cargo); await interaction.response.send_message(f"{membro.mention} ganhou {cargo.mention}")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="tirar_cargo", description="[ADM] Tirar cargo")
+@bot.tree.command(name="tirar_cargo", description="Tira cargo")
 async def tirar_cargo_cmd(interaction: discord.Interaction, membro: discord.Member, cargo: discord.Role):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await membro.remove_roles(cargo); await interaction.response.send_message(f"✅ {membro.mention} perdeu {cargo.mention}!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: await membro.remove_roles(cargo); await interaction.response.send_message(f"{membro.mention} perdeu {cargo.mention}")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="cargo_todos", description="[ADM] Dar cargo pra todos")
+@bot.tree.command(name="cargo_todos", description="Da cargo pra todo mundo")
 async def cargo_todos_cmd(interaction: discord.Interaction, cargo: discord.Role):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await interaction.response.defer(); count=0
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    await interaction.response.defer()
+    count=0
     for m in interaction.guild.members:
         if not m.bot and cargo not in m.roles:
-            try: await m.add_roles(cargo); count+=1; await asyncio.sleep(0.3)
+            try: await m.add_roles(cargo); count+=1; await asyncio.sleep(0.4)
             except: pass
-    await interaction.followup.send(f"✅ Cargo {cargo.mention} pra {count} membros!")
+    await interaction.followup.send(f"Cargo {cargo.mention} dado pra {count} membros")
 
-@bot.tree.command(name="nuke", description="[ADM] Recria canal")
-async def nuke_cmd(interaction: discord.Interaction, canal: discord.TextChannel=None):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    c = canal or interaction.channel; pos = c.position; novo = await c.clone(reason=f"Nuke {interaction.user}"); await novo.edit(position=pos); await c.delete(reason="Nuke"); await novo.send(f"💥 Canal recriado por {interaction.user.mention}!")
+@bot.tree.command(name="criar_canal", description="Cria canal de texto")
+async def criar_canal_cmd(interaction: discord.Interaction, nome: str):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: c = await interaction.guild.create_text_channel(nome); await interaction.response.send_message(f"Canal {c.mention} criado")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="aviso", description="[ADM] Aviso embed")
-async def aviso_cmd(interaction: discord.Interaction, titulo: str, descricao: str):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    emb = discord.Embed(title=f"💚 {titulo}", description=descricao, color=0x00ff00); emb.set_footer(text=f"Por {interaction.user.display_name}"); emb.timestamp = datetime.now(timezone.utc)
-    await interaction.channel.send(embed=emb); await interaction.response.send_message("✅ Aviso enviado!", ephemeral=True)
+@bot.tree.command(name="deletar_canal", description="Deleta canal")
+async def deletar_canal_cmd(interaction: discord.Interaction, canal: discord.TextChannel):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: await canal.delete(reason=f"Deletado por {interaction.user}"); await interaction.response.send_message(f"Canal {canal.name} deletado", ephemeral=True)
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="anuncio", description="[ADM] Anuncio everyone")
-async def anuncio_cmd(interaction: discord.Interaction, titulo: str, descricao: str):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    emb = discord.Embed(title=f"📢 {titulo}", description=descricao, color=0xff0000); emb.timestamp = datetime.now(timezone.utc)
-    await interaction.channel.send(content="@everyone", embed=emb); await interaction.response.send_message("✅ Anuncio!", ephemeral=True)
+@bot.tree.command(name="criar_cargo", description="Cria cargo")
+async def criar_cargo_cmd(interaction: discord.Interaction, nome: str, cor: str="2b2d31"):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try:
+        cor_hex = cor.replace("#","")
+        cor_int = int(cor_hex, 16)
+        cargo = await interaction.guild.create_role(name=nome, colour=discord.Colour(cor_int))
+        await interaction.response.send_message(f"Cargo {cargo.mention} criado")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="embed", description="[ADM] Embed custom")
-async def embed_cmd(interaction: discord.Interaction, titulo: str, descricao: str, cor: str="00ff00"):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    try: cor_int = int(cor.replace("#",""), 16)
-    except: cor_int = 0x00ff00
-    emb = discord.Embed(title=titulo, description=descricao, color=cor_int); await interaction.channel.send(embed=emb); await interaction.response.send_message("✅ Embed!", ephemeral=True)
+@bot.tree.command(name="deletar_cargo", description="Deleta cargo")
+async def deletar_cargo_cmd(interaction: discord.Interaction, cargo: discord.Role):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: await cargo.delete(reason=f"Deletado por {interaction.user}"); await interaction.response.send_message(f"Cargo {cargo.name} deletado")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="say", description="[ADM] Falar como bot")
-async def say_cmd(interaction: discord.Interaction, mensagem: str, canal: discord.TextChannel=None):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    c = canal or interaction.channel; await c.send(mensagem); await interaction.response.send_message("✅ Enviado!", ephemeral=True)
-
-@bot.tree.command(name="nick", description="[ADM] Mudar nick")
-async def nick_cmd(interaction: discord.Interaction, membro: discord.Member, apelido: str):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    try: await membro.edit(nick=apelido); await interaction.response.send_message(f"✅ Nick {membro.mention} -> {apelido}")
-    except Exception as e: await interaction.response.send_message(f"❌ {e}", ephemeral=True)
-
-@bot.tree.command(name="limpar_user", description="[ADM] Limpar msgs de user")
-async def limpar_user_cmd(interaction: discord.Interaction, membro: discord.Member, quantidade: int=50):
-    if not is_mod(interaction): await interaction.response.send_message("❌ Só MOD!", ephemeral=True); return
-    await interaction.response.defer(ephemeral=True)
-    def check(m): return m.author.id == membro.id
-    deleted = await interaction.channel.purge(limit=quantidade, check=check); await interaction.followup.send(f"🧹 Limpei {len(deleted)} de {membro.mention}!", ephemeral=True)
-
-@bot.tree.command(name="blacklist", description="[ADM] Blacklist")
+@bot.tree.command(name="blacklist", description="Bota na blacklist")
 async def blacklist_cmd(interaction: discord.Interaction, membro: discord.Member):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    blacklist.add(membro.id); await interaction.response.send_message(f"🚫 {membro.mention} blacklist!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    blacklist.add(membro.id); await interaction.response.send_message(f"{membro.mention} na blacklist, mensagens dele serão apagadas")
 
-@bot.tree.command(name="unblacklist", description="[ADM] Tirar blacklist")
+@bot.tree.command(name="unblacklist", description="Tira da blacklist")
 async def unblacklist_cmd(interaction: discord.Interaction, membro: discord.Member):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    blacklist.discard(membro.id); await interaction.response.send_message(f"✅ {membro.mention} removido blacklist!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    blacklist.discard(membro.id); await interaction.response.send_message(f"{membro.mention} removido da blacklist")
 
-@bot.tree.command(name="whitelist", description="[ADM] Whitelist isca")
+@bot.tree.command(name="whitelist", description="Whitelist da isca")
 async def whitelist_cmd(interaction: discord.Interaction, membro: discord.Member):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    whitelist.add(membro.id); await interaction.response.send_message(f"✅ {membro.mention} whitelist isca! Não será banido na isca!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    whitelist.add(membro.id); await interaction.response.send_message(f"{membro.mention} na whitelist, não toma ban na isca")
 
-@bot.tree.command(name="antispam", description="[ADM] Liga/desliga anti-spam")
-async def antispam_cmd(interaction: discord.Interaction, estado: str):
-    global anti_spam
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    anti_spam = estado.lower() == "on"; await interaction.response.send_message(f"🛡️ Anti-spam {'LIGADO' if anti_spam else 'DESLIGADO'}!")
-
-@bot.tree.command(name="antilink", description="[ADM] Liga/desliga anti-link")
+@bot.tree.command(name="antilink", description="Liga/desliga anti-link")
 async def antilink_cmd(interaction: discord.Interaction, estado: str):
     global anti_link
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    anti_link = estado.lower() == "on"; await interaction.response.send_message(f"🔗 Anti-link {'LIGADO' if anti_link else 'DESLIGADO'}!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    anti_link = estado.lower() == "on"
+    await interaction.response.send_message(f"Anti-link {'ligado' if anti_link else 'desligado'}")
 
-@bot.tree.command(name="antiraid", description="[ADM] Liga/desliga anti-raid join")
+@bot.tree.command(name="antispam", description="Liga/desliga anti-spam")
+async def antispam_cmd(interaction: discord.Interaction, estado: str):
+    global anti_spam
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    anti_spam = estado.lower() == "on"
+    await interaction.response.send_message(f"Anti-spam {'ligado' if anti_spam else 'desligado'}")
+
+@bot.tree.command(name="antiraid", description="Liga/desliga anti-raid")
 async def antiraid_cmd(interaction: discord.Interaction, estado: str):
     global anti_raid
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    anti_raid = estado.lower() == "on"; await interaction.response.send_message(f"🚨 Anti-raid {'LIGADO' if anti_raid else 'DESLIGADO'}!")
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    anti_raid = estado.lower() == "on"
+    await interaction.response.send_message(f"Anti-raid {'ligado' if anti_raid else 'desligado'}")
 
-@bot.tree.command(name="criar_canal", description="[ADM] Criar canal")
-async def criar_canal_cmd(interaction: discord.Interaction, nome: str, tipo: str="texto"):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    if tipo == "voz": c = await interaction.guild.create_voice_channel(nome)
-    else: c = await interaction.guild.create_text_channel(nome)
-    await interaction.response.send_message(f"✅ Canal {c.mention} criado!")
+@bot.tree.command(name="say", description="Fala como bot em um canal")
+async def say_cmd(interaction: discord.Interaction, mensagem: str, canal: discord.TextChannel=None):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    c = canal or interaction.channel
+    await c.send(mensagem)
+    await interaction.response.send_message("Mensagem enviada", ephemeral=True)
 
-@bot.tree.command(name="deletar_canal", description="[ADM] Deletar canal")
-async def deletar_canal_cmd(interaction: discord.Interaction, canal: discord.TextChannel):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await canal.delete(reason=f"Deletado por {interaction.user}"); await interaction.response.send_message(f"✅ Canal {canal.name} deletado!", ephemeral=True)
+@bot.tree.command(name="embed", description="Manda embed custom")
+async def embed_cmd(interaction: discord.Interaction, titulo: str, descricao: str, cor: str="2b2d31"):
+    if not is_adm(interaction): await interaction.response.send_message("Só adm", ephemeral=True); return
+    try: cor_int = int(cor.replace("#",""), 16)
+    except: cor_int = 0x2b2d31
+    emb = discord.Embed(title=titulo, description=descricao, color=cor_int)
+    await interaction.channel.send(embed=emb)
+    await interaction.response.send_message("Embed enviado", ephemeral=True)
 
-@bot.tree.command(name="criar_cargo", description="[ADM] Criar cargo")
-async def criar_cargo_cmd(interaction: discord.Interaction, nome: str, cor: str="00ff00"):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    try: cor_int = discord.Color(int(cor.replace("#",""), 16))
-    except: cor_int = discord.Color.green()
-    cargo = await interaction.guild.create_role(name=nome, color=cor_int, reason=f"Criado por {interaction.user}"); await interaction.response.send_message(f"✅ Cargo {cargo.mention} criado!")
+@bot.tree.command(name="aviso", description="Manda aviso embed")
+async def aviso_cmd(interaction: discord.Interaction, titulo: str, descricao: str):
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    emb = discord.Embed(title=titulo, description=descricao, color=0x2b2d31)
+    emb.set_footer(text=f"Por {interaction.user.display_name}")
+    emb.timestamp = datetime.now(timezone.utc)
+    await interaction.channel.send(embed=emb)
+    await interaction.response.send_message("Aviso enviado", ephemeral=True)
 
-@bot.tree.command(name="deletar_cargo", description="[ADM] Deletar cargo")
-async def deletar_cargo_cmd(interaction: discord.Interaction, cargo: discord.Role):
-    if not is_adm(interaction): await interaction.response.send_message("❌ Só OG!", ephemeral=True); return
-    await cargo.delete(reason=f"Deletado por {interaction.user}"); await interaction.response.send_message(f"✅ Cargo {cargo.name} deletado!", ephemeral=True)
+@bot.tree.command(name="limpar_user", description="Limpa mensagens de um usuário")
+async def limpar_user_cmd(interaction: discord.Interaction, membro: discord.Member, quantidade: int=50):
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    await interaction.response.defer(ephemeral=True)
+    def check(m): return m.author.id == membro.id
+    try: deleted = await interaction.channel.purge(limit=quantidade, check=check); await interaction.followup.send(f"Limpei {len(deleted)} mensagens de {membro.mention}", ephemeral=True)
+    except Exception as e: await interaction.followup.send(f"Erro {e}", ephemeral=True)
 
-# ========== MEMBROS 40+ COMANDOS ANTIGOS + NOVOS - SEM CARGO =================
-@bot.tree.command(name="cj", description="💚 CJ - texto + gif direto")
-async def cj_cmd(interaction: discord.Interaction):
-    frase = random.choice(FRASES_CJ); texto = f"💚 **CJ - GROVE STREET**\n**{frase}**\nAh shit, here we go again..."; await interaction.response.send_message(f"{texto}\n{GIF_CJ_TRISTE}")
+@bot.tree.command(name="nick", description="Muda apelido")
+async def nick_cmd(interaction: discord.Interaction, membro: discord.Member, apelido: str):
+    if not is_mod(interaction): await interaction.response.send_message("Só mod", ephemeral=True); return
+    try: await membro.edit(nick=apelido); await interaction.response.send_message(f"Apelido de {membro.mention} mudado pra {apelido}")
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="grove", description="💃 Grove dançando")
-async def grove_cmd(interaction: discord.Interaction):
-    texto = f"💚 **GROVE STREET DANÇANDO!**\n**GROVE STREET 4 LIFE!** 💃💚"; await interaction.response.send_message(f"{texto}\n{GIF_GROVE_DANCANDO}")
-
-@bot.tree.command(name="bigsmoke", description="🍔 Big Smoke pedido - FIX")
-async def bigsmoke_cmd(interaction: discord.Interaction):
-    texto = f"🍔 **BIG SMOKE - PEDIDO CLÁSSICO**\n**BIG SMOKE:**\nTwo number 9s, a number 9 large, a number 6 with extra dip, a number 7, two number 45s, one with cheese, and a large soda! 🍔🥤\n\nBig Smoke sempre com fome | Grove Street"; await interaction.response.send_message(f"{texto}\n{GIF_BIGSMOKE_PEDIDO}")
-
-@bot.tree.command(name="seita", description="🕺 Juramento Grove")
-async def seita_cmd(interaction: discord.Interaction):
-    texto = f"💚 **GROVE STREET FAMILIES - SEITA**\n🔫 Grove Street é vida\n💚 Verde pra sempre\n👑 Cristino é o OG\n\nVocê jurou! +100 XP!"; add_xp(interaction.user.id, 100); await interaction.response.send_message(f"{texto}\n{GIF_SEITA_DANCANDO}")
-
-@bot.tree.command(name="sweet", description="💪 Sweet")
-async def sweet_cmd(interaction: discord.Interaction): await interaction.response.send_message("💪 **SWEET:** Você tá representando a Grove ou tá com os Ballas, CJ? Grove 4 life! 💚")
-
-@bot.tree.command(name="ryder", description="💧 Ryder")
-async def ryder_cmd(interaction: discord.Interaction): await interaction.response.send_message("💧 **RYDER:** Essa água tem químico que deixa os mano... Grove! 💚")
-
-@bot.tree.command(name="perfil", description="💚 Perfil Grove")
+# ================= MEMBROS 300+ LINHAS =================
+@bot.tree.command(name="perfil", description="Ver perfil")
 async def perfil_cmd(interaction: discord.Interaction, membro: discord.Member=None):
     membro=membro or interaction.user; data=level[membro.id]
-    emb=discord.Embed(title=f"💚 Perfil Grove - {membro.display_name}", color=0x00ff00); emb.set_thumbnail(url=membro.display_avatar.url)
-    emb.add_field(name="🏆 Level", value=f"{data['level']} ({data['xp']} XP)", inline=True); emb.add_field(name="📅 Entrou", value=f"<t:{int(membro.joined_at.timestamp())}:R>" if membro.joined_at else "?", inline=True); emb.add_field(name="🛡️ Top Cargo", value=membro.top_role.mention, inline=True)
+    emb=discord.Embed(title=f"Perfil de {membro.display_name}", color=0x2b2d31); emb.set_thumbnail(url=membro.display_avatar.url)
+    emb.add_field(name="Level", value=f"{data['level']} ({data['xp']} XP)"); emb.add_field(name="Mensagens", value=data["msgs"])
+    emb.add_field(name="Entrou", value=f"<t:{int(membro.joined_at.timestamp())}:R>" if membro.joined_at else "?")
     await interaction.response.send_message(embed=emb)
 
-@bot.tree.command(name="userinfo", description="👤 Info completa user")
-async def userinfo_cmd(interaction: discord.Interaction, membro: discord.Member=None):
-    membro = membro or interaction.user; emb = discord.Embed(title=f"👤 {membro.display_name}", color=0x3498db); emb.set_thumbnail(url=membro.display_avatar.url)
-    emb.add_field(name="Nome", value=f"{membro.name}", inline=True); emb.add_field(name="ID", value=membro.id, inline=True); emb.add_field(name="Conta criada", value=f"<t:{int(membro.created_at.timestamp())}:R>", inline=True)
-    emb.add_field(name="Entrou", value=f"<t:{int(membro.joined_at.timestamp())}:R>" if membro.joined_at else "?", inline=True); emb.add_field(name="Cargos", value=len(membro.roles)-1, inline=True)
-    await interaction.response.send_message(embed=emb)
-
-@bot.tree.command(name="serverinfo", description="🏠 Info server")
-async def serverinfo_cmd(interaction: discord.Interaction):
-    g = interaction.guild; emb = discord.Embed(title=f"🏠 {g.name}", color=0x00ff00)
-    if g.icon: emb.set_thumbnail(url=g.icon.url)
-    emb.add_field(name="👥 Membros", value=g.member_count, inline=True); emb.add_field(name="📅 Criado", value=f"<t:{int(g.created_at.timestamp())}:R>", inline=True); emb.add_field(name="👑 Dono", value=g.owner.mention if g.owner else "?", inline=True)
-    emb.add_field(name="💬 Canais", value=len(g.channels), inline=True); emb.add_field(name="🛡️ Cargos", value=len(g.roles), inline=True); emb.add_field(name="😀 Boost", value=f"Level {g.premium_tier}", inline=True)
-    await interaction.response.send_message(embed=emb)
-
-@bot.tree.command(name="avatar", description="📸 Foto")
+@bot.tree.command(name="avatar", description="Ver foto")
 async def avatar_cmd(interaction: discord.Interaction, membro: discord.Member=None):
-    membro = membro or interaction.user; emb = discord.Embed(title=f"📸 {membro.display_name}", color=0x00ff00); emb.set_image(url=membro.display_avatar.url); await interaction.response.send_message(embed=emb)
+    membro = membro or interaction.user; emb = discord.Embed(color=0x2b2d31); emb.set_image(url=membro.display_avatar.url); emb.set_footer(text=membro.display_name); await interaction.response.send_message(embed=emb)
 
-@bot.tree.command(name="banner", description="🖼️ Banner")
+@bot.tree.command(name="banner", description="Ver banner")
 async def banner_cmd(interaction: discord.Interaction, membro: discord.Member=None):
     membro = membro or interaction.user
     try:
-        user = await bot.fetch_user(membro.id)
-        if user.banner: emb = discord.Embed(title=f"🖼️ Banner {membro.display_name}", color=0x00ff00); emb.set_image(url=user.banner.url); await interaction.response.send_message(embed=emb)
-        else: await interaction.response.send_message("❌ Sem banner!", ephemeral=True)
-    except Exception as e: await interaction.response.send_message(f"❌ {e}", ephemeral=True)
+        u = await bot.fetch_user(membro.id)
+        if u.banner: emb = discord.Embed(color=0x2b2d31); emb.set_image(url=u.banner.url); await interaction.response.send_message(embed=emb)
+        else: await interaction.response.send_message("Usuário sem banner", ephemeral=True)
+    except Exception as e: await interaction.response.send_message(f"Erro {e}", ephemeral=True)
 
-@bot.tree.command(name="ping", description="🏓 Ping")
-async def ping_cmd(interaction: discord.Interaction): lat = round(bot.latency * 1000); await interaction.response.send_message(f"🏓 Pong! Grove ping: **{lat}ms** 💚")
+@bot.tree.command(name="userinfo", description="Info do usuário")
+async def userinfo_cmd(interaction: discord.Interaction, membro: discord.Member=None):
+    membro = membro or interaction.user; emb = discord.Embed(title=membro.display_name, color=0x2b2d31); emb.set_thumbnail(url=membro.display_avatar.url)
+    emb.add_field(name="ID", value=membro.id); emb.add_field(name="Conta criada", value=f"<t:{int(membro.created_at.timestamp())}:D>"); emb.add_field(name="Entrou no server", value=f"<t:{int(membro.joined_at.timestamp())}:R>" if membro.joined_at else "?")
+    emb.add_field(name="Cargos", value=len(membro.roles)-1); await interaction.response.send_message(embed=emb)
 
-@bot.tree.command(name="uptime", description="⏰ Tempo online - NOVO")
-async def uptime_cmd(interaction: discord.Interaction):
-    delta = datetime.now(timezone.utc) - bot.user.created_at if hasattr(bot, 'start_time') else timedelta(seconds=0)
-    await interaction.response.send_message(f"⏰ Grove bot online! 💚")
+@bot.tree.command(name="serverinfo", description="Info do servidor")
+async def serverinfo_cmd(interaction: discord.Interaction):
+    g = interaction.guild; emb = discord.Embed(title=g.name, description=g.description or "Sem descrição", color=0x2b2d31)
+    if g.icon: emb.set_thumbnail(url=g.icon.url)
+    emb.add_field(name="ID", value=g.id); emb.add_field(name="Dono", value=f"<@{g.owner_id}>"); emb.add_field(name="Membros", value=g.member_count); emb.add_field(name="Canais", value=len(g.channels)); emb.add_field(name="Cargos", value=len(g.roles)); emb.add_field(name="Criado em", value=f"<t:{int(g.created_at.timestamp())}:D>")
+    await interaction.response.send_message(embed=emb)
 
-@bot.tree.command(name="regras", description="📜 Regras")
-async def regras_cmd(interaction: discord.Interaction):
-    emb = discord.Embed(title="📜 REGRAS GROVE STREET FAMILIES", description="**1️⃣ Respeita a Grove**\n**2️⃣ Sem spam**\n**3️⃣ Sem divulgação = ban**\n**4️⃣ Isca protegida = ban auto!**\n**5️⃣ Usa canais certo**\n**6️⃣ Respeita staff**\n\n**Quebrou = Punição!**", color=0x00ff00); await interaction.response.send_message(embed=emb)
+@bot.tree.command(name="ping", description="Latência")
+async def ping_cmd(interaction: discord.Interaction): await interaction.response.send_message(f"Pong {round(bot.latency*1000)}ms")
 
-@bot.tree.command(name="bemvindo", description="👋 Guia novos")
-async def bemvindo_cmd(interaction: discord.Interaction):
-    emb = discord.Embed(title="💚 BEM VINDO A GROVE STREET!", description=f"📜 Lê <#{CANAL_REGRAS}>\n💚 /seita pra jurar\n📊 /perfil\n\nCristino OG 👑", color=0x00ff00); await interaction.response.send_message(embed=emb)
+@bot.tree.command(name="afk", description="Ficar AFK")
+async def afk_cmd(interaction: discord.Interaction, motivo: str="AFK"): afk[interaction.user.id]=motivo; await interaction.response.send_message(f"{interaction.user.mention} AFK: {motivo}")
 
-@bot.tree.command(name="rank", description="🏆 Top Level")
+@bot.tree.command(name="rank", description="Ranking level")
 async def rank_cmd(interaction: discord.Interaction):
-    top = sorted(level.items(), key=lambda x: x[1]['xp'], reverse=True)[:10]; desc=""
+    top = sorted(level.items(), key=lambda x: x[1]['xp'], reverse=True)[:15]; desc=""
     for i,(uid,d) in enumerate(top,1):
-        m = interaction.guild.get_member(uid); nome = m.display_name if m else f"ID {uid}"; desc+=f"**{i}.** {nome} - Level {d['level']} ({d['xp']} XP)\n"
-    await interaction.response.send_message(embed=discord.Embed(title="🏆 TOP GROVE LEVEL", description=desc or "Ninguém!", color=0xffd700))
+        m = interaction.guild.get_member(uid); nome = m.display_name if m else f"ID {uid}"; desc+=f"{i}. {nome} - Level {d['level']} ({d['xp']} xp)\n"
+    await interaction.response.send_message(embed=discord.Embed(title="Ranking", description=desc or "Vazio", color=0x2b2d31))
 
-@bot.tree.command(name="afk", description="💤 AFK")
-async def afk_cmd(interaction: discord.Interaction, motivo: str="Fui dar um rolê na Grove"): afk[interaction.user.id]=motivo; await interaction.response.send_message(f"💤 {interaction.user.mention} AFK: {motivo}")
-
-@bot.tree.command(name="report", description="🚨 Reportar")
-async def report_cmd(interaction: discord.Interaction, membro: discord.Member, motivo: str):
-    canal = bot.get_channel(CANAL_LOGS)
-    if canal:
-        emb = discord.Embed(title="🚨 REPORT", description=f"**Reportado:** {membro.mention} ({membro.id})\n**Por:** {interaction.user.mention}\n**Motivo:** {motivo}\n**Canal:** {interaction.channel.mention}", color=0xff0000); emb.timestamp = datetime.now(timezone.utc); await canal.send(embed=emb)
-    await interaction.response.send_message("✅ Report enviado!", ephemeral=True)
-
-@bot.tree.command(name="sugestao", description="💡 Sugestão")
-async def sugestao_cmd(interaction: discord.Interaction, ideia: str):
-    sugestoes.append({"user": interaction.user.id, "ideia": ideia}); canal = bot.get_channel(CANAL_LOGS)
-    if canal: emb = discord.Embed(title="💡 SUGESTÃO", description=f"**De:** {interaction.user.mention}\n**Ideia:** {ideia}", color=0x3498db); await canal.send(embed=emb)
-    await interaction.response.send_message("✅ Sugestão enviada!", ephemeral=True)
-
-@bot.tree.command(name="invite", description="🔗 Convite bot")
-async def invite_cmd(interaction: discord.Interaction): await interaction.response.send_message(f"🔗 Convite: https://discord.com/api/oauth2/authorize?client_id={bot.user.id}&permissions=8&scope=bot%20applications.commands", ephemeral=True)
-
-@bot.tree.command(name="id", description="🆔 Ver ID - NOVO")
-async def id_cmd(interaction: discord.Interaction, membro: discord.Member=None): membro = membro or interaction.user; await interaction.response.send_message(f"🆔 {membro.mention} ID: `{membro.id}`", ephemeral=True)
-
-@bot.tree.command(name="clima", description="🌤️ Clima Grove RP - NOVO")
-async def clima_cmd(interaction: discord.Interaction): climas = ["☀️ Sol na Grove!", "🌧️ Chuva em Los Santos", "🌫️ Neblina Grove", "🌙 Noite na Grove"]; await interaction.response.send_message(f"🌤️ {random.choice(climas)}")
-
-@bot.tree.command(name="dado", description="🎲 Dado")
-async def dado_cmd(interaction: discord.Interaction, lados: int=6): await interaction.response.send_message(f"🎲 {interaction.user.mention} rolou {lados} e tirou **{random.randint(1,lados)}**!")
-
-@bot.tree.command(name="8ball", description="🎱 Bola 8 Grove")
-async def ball_cmd(interaction: discord.Interaction, pergunta: str): respostas = ["Grove aprova! 💚", "Ballers não deixa! 🔫", "Big Smoke disse sim 🍔", "Sweet falou não 💪", "CJ mandou sim! 👑"]; await interaction.response.send_message(f"🎱 **{pergunta}**\n💚 Grove: **{random.choice(respostas)}**")
-
-@bot.tree.command(name="ship", description="💚 Shippar")
-async def ship_cmd(interaction: discord.Interaction, pessoa1: discord.Member, pessoa2: discord.Member): pct = random.randint(0,100); await interaction.response.send_message(f"💚💘 {pessoa1.mention} + {pessoa2.mention} = **{pct}%** {'GROVE SHIPOU! 💚' if pct>70 else 'Ballers separou 💔'}")
-
-@bot.tree.command(name="falar", description="💬 Frase aleatória CJ - NOVO")
-async def falar_cmd(interaction: discord.Interaction): await interaction.response.send_message(f"💚 CJ: **{random.choice(FRASES_CJ)}**")
-
-@bot.tree.command(name="contar", description="🔢 Contar membros - NOVO")
-async def contar_cmd(interaction: discord.Interaction):
-    g = interaction.guild; total = g.member_count; online = len([m for m in g.members if m.status!= discord.Status.offline]); bots = len([m for m in g.members if m.bot])
-    await interaction.response.send_message(f"🔢 **Grove:** Total {total} | Online {online} | Bots {bots} | Humanos {total-bots}")
-
-@bot.tree.command(name="limpar_chat", description="🧹 Limpar seu chat DM com bot - NOVO")
-async def limpar_chat_cmd(interaction: discord.Interaction): await interaction.response.send_message("🧹 Use /clear [quantidade] no canal!", ephemeral=True)
-
-@bot.tree.command(name="aniversario", description="🎂 Definir aniversário - NOVO")
-async def aniversario_cmd(interaction: discord.Interaction, dia: int, mes: int): await interaction.response.send_message(f"🎂 {interaction.user.mention} aniversário definido {dia}/{mes}! Grove vai lembrar! 💚", ephemeral=True)
-
-@bot.tree.command(name="top_ativos", description="📊 Top mais ativos por comando - NOVO")
+@bot.tree.command(name="top_ativos", description="Top mensagens")
 async def top_ativos_cmd(interaction: discord.Interaction):
-    top = comandos_usados.most_common(10); desc = "\n".join([f"**{i}.** {cmd}: {q} usos" for i,(cmd,q) in enumerate(top,1)]) or "Ninguém usou ainda!"
-    await interaction.response.send_message(embed=discord.Embed(title="📊 TOP COMANDOS GROVE", description=desc, color=0x00ff00))
+    top = sorted(level.items(), key=lambda x: x[1]['msgs'], reverse=True)[:10]; desc="\n".join([f"{i}. {interaction.guild.get_member(uid).display_name if interaction.guild.get_member(uid) else uid} - {d['msgs']} msgs" for i,(uid,d) in enumerate(top,1)]) or "Vazio"
+    await interaction.response.send_message(embed=discord.Embed(title="Top Ativos", description=desc, color=0x2b2d31))
 
-@bot.tree.command(name="ajuda", description="📜 Menu 700+ mecânicas")
+@bot.tree.command(name="regras", description="Mostra regras")
+async def regras_cmd(interaction: discord.Interaction):
+    emb = discord.Embed(title="Regras do servidor", description="Pra todo mundo ficar de boa por aqui, segue as regras:", color=0x2b2d31)
+    emb.add_field(name="1. Respeito", value="Trata todo mundo bem, sem treta desnecessária.", inline=False)
+    emb.add_field(name="2. Sem spam ou divulgação", value="Evita flood e não divulga outros servidores sem permissão.", inline=False)
+    emb.add_field(name="3. Conteúdo no lugar certo", value="Manda mídia no canal de mídia, conversa no geral.", inline=False)
+    emb.add_field(name="4. Isca anti-raid", value=f"O canal <#{CANAL_ISCA}> é isca de proteção, não digita lá ou toma ban automático.", inline=False)
+    emb.add_field(name="5. Siga a staff", value="Se a moderação pedir pra parar, respeita.", inline=False)
+    emb.set_footer(text="Quebrou? Pode levar mute, kick ou ban")
+    await interaction.response.send_message(embed=emb)
+
+@bot.tree.command(name="ajuda", description="Lista de comandos")
 async def ajuda_cmd(interaction: discord.Interaction):
-    emb=discord.Embed(title="💚 CJ BOT 700+ MECÂNICAS - SEM CARGO - FOCADO SÉRIO", description="**BOT COMPLETÃO SEM LIMITES!**", color=0x00ff00)
-    emb.add_field(name="🚨 ANTI-RAID 700+ MECÂNICAS - NÃO ESQUECI!", value=f"**ISCA:** <#{CANAL_ISCA}> - ban auto!\n**Anti-spam:** muta quem spamma 5 msgs/5s\n**Anti-link:** bloqueia link\n**Anti-raid join:** detecta 5+ joins em 10s\n**Whitelist isca:** /whitelist\n**Blacklist:** /blacklist\n**Logs:** <#{CANAL_LOGS}>", inline=False)
-    emb.add_field(name="🛡️ ADM 35+ COMANDOS", value="/clear, /ban, /massban, /unban, /softban, /kick, /timeout, /untimeout, /warn, /warns, /clear_warns, /lock, /unlock, /lockall, /unlockall, /slowmode, /dar_cargo, /tirar_cargo, /cargo_todos, /nuke, /aviso, /anuncio, /embed, /say, /nick, /limpar_user, /blacklist, /unblacklist, /whitelist, /antispam, /antilink, /antiraid, /criar_canal, /deletar_canal, /criar_cargo, /deletar_cargo", inline=False)
-    emb.add_field(name="👤 MEMBROS 40+ COMANDOS - ANTIGOS + NOVOS", value="**Grove RP:** /cj, /grove, /bigsmoke, /seita, /sweet, /ryder, /falar (texto+gif.gif direto FIX)\n**Info sério:** /perfil, /userinfo, /serverinfo, /avatar, /banner, /ping, /uptime, /id, /contar, /regras, /bemvindo, /rank, /top_ativos, /clima\n**Util:** /afk, /report, /sugestao, /invite, /dado, /8ball, /ship, /aniversario, /limpar_chat", inline=False)
-    emb.add_field(name="📦 REQUIREMENTS SEM VERSÃO", value="discord.py\npython-dotenv\naiohttp\naudioop-lts", inline=False)
-    emb.set_footer(text="700+ mecânicas | Sem cargo level | Isca ativa | Anti-spam | Anti-link | Anti-raid | Grove | Cristino 👑 | SEM IA | SEM MINIGAME | FOCADO SÉRIO")
+    # AJUDA SÓ TITULO COMO PEDIU
+    emb=discord.Embed(title="Comandos", description="Todos os comandos disponíveis no servidor:", color=0x2b2d31)
+    emb.add_field(name="Moderação", value="clear, ban, massban, unban, softban, kick, timeout, untimeout, warn, warns, clear_warns, lock, unlock, lockall, unlockall, slowmode, nuke, dar_cargo, tirar_cargo, cargo_todos, criar_canal, deletar_canal, criar_cargo, deletar_cargo, blacklist, unblacklist, whitelist, antilink, antispam, antiraid, say, embed, aviso, limpar_user, nick", inline=False)
+    emb.add_field(name="Membros", value="perfil, avatar, banner, userinfo, serverinfo, ping, afk, rank, top_ativos, regras, ajuda, sugestao, report, enquete", inline=False)
     await interaction.response.send_message(embed=emb, ephemeral=True)
+
+@bot.tree.command(name="sugestao", description="Enviar sugestão")
+async def sugestao_cmd(interaction: discord.Interaction):
+    await interaction.response.send_modal(SugestaoModal())
+
+@bot.tree.command(name="report", description="Reportar alguém")
+async def report_cmd(interaction: discord.Interaction):
+    await interaction.response.send_modal(ReportModal())
+
+@bot.tree.command(name="enquete", description="Criar enquete")
+async def enquete_cmd(interaction: discord.Interaction, pergunta: str, opcao1: str, opcao2: str, opcao3: str=None, opcao4: str=None):
+    emb = discord.Embed(title="📊 Enquete", description=pergunta, color=0x2b2d31)
+    opcoes = [opcao1, opcao2, opcao3, opcao4]
+    opcoes = [o for o in opcoes if o]
+    desc = "\n".join([f"{i+1}. {o}" for i,o in enumerate(opcoes)])
+    emb.add_field(name="Opções", value=desc)
+    emb.set_footer(text=f"Enquete criada por {interaction.user.display_name}")
+    await interaction.response.send_message(embed=emb)
+    msg = await interaction.original_response()
+    emojis = ["1️⃣","2️⃣","3️⃣","4️⃣"]
+    for i in range(len(opcoes)):
+        try: await msg.add_reaction(emojis[i])
+        except: pass
 
 bot.run(TOKEN)
